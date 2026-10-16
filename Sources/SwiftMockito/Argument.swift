@@ -62,8 +62,13 @@ public func arg<T: AnyObject & Equatable>(_ value: T) -> Argument {
     Argument(equatable: value)
 }
 
+/// Class-bound generic and existential contexts. The dynamic class may still be
+/// `Equatable`, so check that first and fall back to identity.
 public func arg<T: AnyObject>(_ value: T) -> Argument {
-    Argument(identity: value)
+    if let equatable = value as? any Equatable {
+        return Argument(equatable: equatable)
+    }
+    return Argument(identity: value)
 }
 
 /// Generic and existential contexts. Decided at runtime, because the generator

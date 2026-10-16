@@ -8,6 +8,13 @@ private final class EquatableReference: Equatable {
     init(id: Int) { self.id = id }
     static func == (lhs: EquatableReference, rhs: EquatableReference) -> Bool { lhs.id == rhs.id }
 }
+private protocol ClassBound: AnyObject {}
+private final class EquatableBound: Equatable, ClassBound {
+    let id: Int
+    init(id: Int) { self.id = id }
+    static func == (lhs: EquatableBound, rhs: EquatableBound) -> Bool { lhs.id == rhs.id }
+}
+private final class PlainBound: ClassBound {}
 private struct Opaque {}
 private protocol Shape {}
 private struct Square: Shape, Equatable {}
@@ -46,6 +53,36 @@ private struct Square: Shape, Equatable {}
         #expect(erased(Square()).isSupported)
         let reference = Reference()
         #expect(erased(reference).matches(erased(reference)))
+    }
+
+    @Test func equatableClassesInClassBoundExistentialsCompareByValue() {
+        let a: any ClassBound = EquatableBound(id: 1)
+        let b: any ClassBound = EquatableBound(id: 1)
+        let other: any ClassBound = EquatableBound(id: 2)
+        #expect(arg(a).matches(arg(b)))
+        #expect(!arg(a).matches(arg(other)))
+        #expect(arg(a).matches(arg(EquatableBound(id: 1))))
+        #expect(arg(EquatableBound(id: 1)).matches(arg(b)))
+    }
+
+    @Test func equatableClassesInAnyObjectGenericsCompareByValue() {
+        func viaAnyObject<T: AnyObject>(_ value: T) -> Argument { arg(value) }
+        #expect(viaAnyObject(EquatableBound(id: 1)).matches(viaAnyObject(EquatableBound(id: 1))))
+        #expect(!viaAnyObject(EquatableBound(id: 1)).matches(viaAnyObject(EquatableBound(id: 2))))
+        #expect(viaAnyObject(EquatableBound(id: 1)).matches(arg(EquatableBound(id: 1))))
+        let existential: any ClassBound = EquatableBound(id: 1)
+        #expect(viaAnyObject(existential).matches(arg(EquatableBound(id: 1))))
+    }
+
+    @Test func nonEquatableClassesCompareByIdentityOnEveryPath() {
+        func viaAnyObject<T: AnyObject>(_ value: T) -> Argument { arg(value) }
+        let a = PlainBound(), b = PlainBound()
+        let existentialA: any ClassBound = a
+        let existentialB: any ClassBound = b
+        #expect(arg(existentialA).matches(arg(a)))
+        #expect(!arg(existentialA).matches(arg(existentialB)))
+        #expect(viaAnyObject(a).matches(viaAnyObject(a)))
+        #expect(!viaAnyObject(a).matches(viaAnyObject(b)))
     }
 
     @Test func existentialHoldingEquatableIsSupported() {
