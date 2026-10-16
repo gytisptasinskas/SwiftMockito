@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SwiftMockito
 
@@ -77,6 +78,25 @@ import Testing
         } == ["when: the expression suspended before reaching a mock call. Keep only the mock call inside the closure; a mock of a global-actor protocol must be used from a test isolated to that actor. @SwiftMockitoTests/CaptureTests.swift"])
     }
 
+    @Test func suspendedExpressionIsAlwaysReported() {
+        // The body parks on a continuation that is resumed only after `when` returned, so it
+        // always suspends (`Task.yield` may not) and always finishes after `captureAll` gave up.
+        let gate = Gate()
+        let box = MessageBox()
+        Reporter.$sink.withValue({ message, _ in box.append(message) }) {
+            for _ in 0..<300 {
+                when {
+                    await gate.wait()
+                    return try await mock.fetch(id: "1")
+                }.thenReturn("x")
+                gate.openAll()
+            }
+        }
+        #expect(box.messages.count == 300)
+        #expect(box.messages.allSatisfy { $0.contains("suspended before reaching a mock call") })
+        #expect(mock.runtime.stubsSnapshot(member: "fetch(id:)").isEmpty)
+    }
+
     // Resolved D1: `nonisolated(nonsending)` async members keep MainActor closures synchronous.
     @MainActor @Test func mainActorTestCapturesAsyncMember() async throws {
         when { try await mock.fetch(id: "7") }.thenReturn("main")
@@ -88,5 +108,20 @@ import Testing
         // and `when` sees exactly one call.
         #expect(Capture.continuesAfterRecord == false)
         #expect(failures { when { try mock.save("x") }.thenThrow(SampleError()) }.isEmpty)
+    }
+}
+
+/// Parks `wait()` callers until `openAll()`.
+private final class Gate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuation in lock.withLock { waiters.append(continuation) } }
+    }
+
+    func openAll() {
+        let parked = lock.withLock { let all = waiters; waiters = []; return all }
+        for continuation in parked { continuation.resume() }
     }
 }

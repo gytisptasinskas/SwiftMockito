@@ -65,10 +65,37 @@ struct CaptureOutcome {
     let signalled: Bool
 }
 
+/// Shared between the caller and the capture task. If the body suspends, the task
+/// outlives `captureAll`, so every field is read and written under one lock.
 private final class Completion: @unchecked Sendable {
-    var finished = false
-    var signalled = false
-    var unexpected: (any Error)?
+    private let lock = NSLock()
+    /// The thread inside `captureAll`. A body that finishes synchronously finishes here.
+    private let callerThread = pthread_self()
+    private var finished = false
+    private var abandoned = false
+    private var signalled = false
+    private var unexpected: (any Error)?
+
+    /// Called by the task when the body ends. A no-op once the caller has given up.
+    /// A body that finishes on another thread suspended on the way (the caller thread is
+    /// blocked in `captureAll`, so it cannot have resumed it there). That counts as not
+    /// finished even when it wins the race against `settle()`, so reporting is deterministic.
+    func finish(signalled: Bool, unexpected: (any Error)?) {
+        lock.withLock {
+            guard !abandoned, pthread_equal(pthread_self(), callerThread) != 0 else { return }
+            finished = true
+            self.signalled = signalled
+            self.unexpected = unexpected
+        }
+    }
+
+    /// Called by the caller after `Task.immediate` returns. Abandons the task if it has not finished.
+    func settle() -> (finished: Bool, signalled: Bool, unexpected: (any Error)?) {
+        lock.withLock {
+            if !finished { abandoned = true }
+            return (finished, signalled, unexpected)
+        }
+    }
 }
 
 /// Runs `body` synchronously with a fresh capture installed, via `Task.immediate`.
@@ -90,22 +117,25 @@ func captureAll(
         Capture.$currentSite.withValue(site) {
             Capture.$continuesAfterRecord.withValue(continuing) {
                 _ = Task.immediate {
-                    _ = isolation
-                    do { try await body() } catch is CaptureSignal { completion.signalled = true } catch { completion.unexpected = error }
-                    completion.finished = true
+                    _ = isolation   // Load-bearing: keeps this closure on the caller's actor and lets the non-`sending` capture of `body` compile.
+                    var signalled = false
+                    var unexpected: (any Error)?
+                    do { try await body() } catch is CaptureSignal { signalled = true } catch { unexpected = error }
+                    completion.finish(signalled: signalled, unexpected: unexpected)
                 }
             }
         }
     }
-    guard completion.finished else {
+    let result = completion.settle()
+    guard result.finished else {
         Reporter.fail("\(verb): the expression suspended before reaching a mock call. Keep only the mock call inside the closure; a mock of a global-actor protocol must be used from a test isolated to that actor.", at: site)
         return nil
     }
-    if let error = completion.unexpected {
+    if let error = result.unexpected {
         Reporter.fail("\(verb): the expression threw \(error) instead of reaching a mock call.", at: site)
         return nil
     }
-    return CaptureOutcome(recorded: capture.snapshot, signalled: completion.signalled)
+    return CaptureOutcome(recorded: capture.snapshot, signalled: result.signalled)
 }
 
 /// Synchronous variant for the autoclosure overloads.
