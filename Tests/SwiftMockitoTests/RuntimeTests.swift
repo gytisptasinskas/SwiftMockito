@@ -44,7 +44,7 @@ private struct Boom: Error, Equatable {}
     @Test func answerReceivesTypedArgumentsIncludingCallbacks() {
         stub(runtime, "load(id:completion:)", key: [arg("42")],
              argumentTypes: (String, (Result<String, any Error>) -> Void).self, returning: Void.self)
-            .thenAnswer { (id: String, completion: @escaping (Result<String, any Error>) -> Void) throws in
+            .thenAnswer { (id: String, completion: @escaping (Result<String, any Error>) -> Void) in
                 completion(.success("user-\(id)"))
             }
         var delivered: String?
@@ -62,6 +62,42 @@ private struct Boom: Error, Equatable {}
             }
         let value: String = try await runtime.invokeThrowing("fetch(id:)", key: [arg("1")], args: "1")
         #expect(value == "fetched-1")
+    }
+
+    @Test func asyncCallbackAnswerOnThrowingAsyncMember() async throws {
+        stub(runtime, "fetch(id:done:)", key: [arg("1")], argumentTypes: (String, (String) -> Void).self,
+             effects: [.async, .throwing], returning: Void.self)
+            .thenAnswer { (id: String, done: @escaping (String) -> Void) async in done(id) }
+        let box = MessageBox()
+        let done: (String) -> Void = { box.append($0) }
+        try await runtime.invokeThrowing("fetch(id:done:)", key: [arg("1")], args: "1", done) as Void
+        #expect(box.messages == ["1"])
+    }
+
+    @Test func throwingCallbackAnswerStillThrows() {
+        stub(runtime, "load(id:done:)", key: [arg("1")], argumentTypes: (String, (String) -> Void).self,
+             effects: .throwing, returning: Void.self)
+            .thenAnswer { (id: String, done: @escaping (String) -> Void) throws in
+                done(id)
+                throw Boom()
+            }
+        let box = MessageBox()
+        let done: (String) -> Void = { box.append($0) }
+        #expect(throws: Boom()) {
+            try runtime.invokeThrowing("load(id:done:)", key: [arg("1")], args: "1", done) as Void
+        }
+        #expect(box.messages == ["1"])
+    }
+
+    @Test func neverFailureStubAcceptsNonThrowingCallbackAnswer() {
+        let target = StubTarget(runtime: runtime, member: "run(id:done:)", key: [arg("1")],
+                                argumentsType: (String, (String) -> Void).self, effects: [], site: CallSite())
+        Stub<Void, Never>(target: target)
+            .thenAnswer { (id: String, done: @escaping (String) -> Void) in done(id) }
+        let box = MessageBox()
+        let done: (String) -> Void = { box.append($0) }
+        runtime.invoke("run(id:done:)", key: [arg("1")], args: "1", done) as Void
+        #expect(box.messages == ["1"])
     }
 
     @Test func missingStubOnThrowingMemberThrowsDiagnostic() {

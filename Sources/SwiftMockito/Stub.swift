@@ -67,7 +67,7 @@ public struct Stub<R, Failure: Error> {
         }))
     }
 
-    private func install(_ answer: StoredAnswer) -> Self {
+    fileprivate func install(_ answer: StoredAnswer) -> Self {
         guard let target else { return self }
         guard ObjectIdentifier(answer.argumentsType) == ObjectIdentifier(target.argumentsType) else {
             Reporter.fail(
@@ -86,6 +86,24 @@ public struct Stub<R, Failure: Error> {
 }
 
 extension Stub where Failure == any Error {
+    /// Non-throwing answers for members that can throw. Separate overloads, because converting a
+    /// non-throwing closure to `throws(any Error)` crashes the compiler when an argument is a callback.
+    @discardableResult
+    public func thenAnswer<each A>(_ body: @escaping (repeat each A) -> R) -> Self {
+        install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: false, sync: { packed in
+            let args = packed as! (repeat each A)
+            return body(repeat each args)
+        }, async: nil))
+    }
+
+    @discardableResult
+    public func thenAnswer<each A>(_ body: @escaping (repeat each A) async -> R) -> Self {
+        install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: true, sync: nil, async: { packed in
+            let args = packed as! (repeat each A)
+            return await body(repeat each args)
+        }))
+    }
+
     @discardableResult
     public func thenThrow(_ error: any Error) -> Self {
         guard let target else { return self }
