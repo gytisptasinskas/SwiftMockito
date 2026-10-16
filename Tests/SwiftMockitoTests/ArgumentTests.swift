@@ -15,7 +15,6 @@ private final class EquatableBound: Equatable, ClassBound {
     static func == (lhs: EquatableBound, rhs: EquatableBound) -> Bool { lhs.id == rhs.id }
 }
 private final class PlainBound: ClassBound {}
-private struct Opaque {}
 private protocol Shape {}
 private struct Square: Shape, Equatable {}
 
