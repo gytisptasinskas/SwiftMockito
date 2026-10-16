@@ -49,6 +49,19 @@ Task 4 settles these with compile probes. Tasks 5 onward are written against the
 | D4 | A `@MainActor protocol P` mocked by a subclass of nonisolated `open class Mock`. | `@MainActor final class MockP: Mock, P`. | The first passing probe among (b) a nonisolated class with `@MainActor` on every witness and (c) a `nonisolated final class` with `@MainActor` witnesses. If none passes: the generator emits an "unsupported" diagnostic for global-actor protocols. |
 | D5 | `verifyInOrder { … try client.save(.fixture) … }` must record every line, but each throwing member throws `CaptureSignal` after recording. | The result builder wraps each line in an `@autoclosure @escaping () async throws -> T` step, so each step can swallow its own signal. | Plain builder. The README says to write throwing lines in `verifyInOrder` as `try?`. Tests and the spec example use `try?`. |
 
+### Resolved decisions (Tasks 4 and 4b; see `docs/superpowers/specs/api-spike-results.md`)
+
+These are binding for Tasks 5 onward. The task text below already follows them.
+
+- **D1: Primary, amended.** `when`/`verify`/`verifyNever` are synchronous and run their closure with `Task.immediate`; platforms are macOS 26 / iOS 26. Every async member of a generated mock for a protocol **without** a global actor is declared `nonisolated(nonsending)`. Without that, a `@MainActor` test's closure would hop off the main actor before recording. Async members of a global-actor protocol stay isolated to that actor. They can only be stubbed from a test isolated to the same actor; otherwise `when` reports the suspension misuse, whose message says so.
+- **D1x: Fallback.** The closure parameters are `@escaping`, not `sending` (`sending` rejects XCTest closures that capture `self`). Inside, `nonisolated(unsafe) let body = call` precedes `Task.immediate`.
+- **thenThrow on the closure form of a non-throwing member** compiles: chaining `.thenThrow` makes the solver infer `E = any Error`. The runtime check (Task 7: "the member does not throw") covers it, as the spec allows. The autoclosure form is rejected at compile time.
+- **D2: Fallback.** Single-parameter answers usually infer. Multi-parameter answers whose types the body cannot pin down (callbacks) need annotated parameters: `{ (id: String, completion: @escaping (Result<User, Error>) -> Void) in … }`.
+- **D3: Primary.** `arg<each T: Equatable>(_ value: (repeat each T))`.
+- **D4: a.** `@MainActor final class MockP: Mock, P, @unchecked Sendable`.
+- **D5: amended.** `verifyInOrder` uses a plain result builder and sets the task-local `Capture.continuesAfterRecord`. While it is set, generated throwing members record the call and then **return a placeholder** instead of throwing: `return` for `Void`, or `Dummies.placeholder(T.self, fallback:)` when it yields a value. They throw `CaptureSignal` only when no placeholder exists (for example, a generic `T` return). `verifyInOrder` turns that into a misuse that names the member and suggests `provideDummy(_:)`.
+- **A6.** Generated mocks restate the conformance: `final class MockP: Mock, P, @unchecked Sendable`. Without it, every build warns.
+
 ---
 
 ### Task 4: API feasibility spike
@@ -522,7 +535,7 @@ git commit -m "docs: record API feasibility spike results"
 - Create: `Tests/SwiftMockitoTests/ReporterXCTests.swift` (XCTest)
 
 **Interfaces:**
-- Consumes: `docs/superpowers/specs/api-spike-results.md` (D1 decides the `platforms` line).
+- Consumes: resolved D1 (platforms macOS 26 / iOS 26).
 - Produces:
   - `public struct CallSite: Sendable, CustomStringConvertible` with `fileID: String`, `filePath: StaticString`, `line: UInt`, `column: UInt`, and `init(fileID:filePath:line:column:)` with every parameter defaulted to its `#` literal. `description == "\(fileID):\(line):\(column)"`.
   - `enum Reporter` (internal) with `static func fail(_ message: String, at site: CallSite)` and `static func trap(_ message: String, at site: CallSite) -> Never`. It also has `@TaskLocal static var sink: (@Sendable (String, CallSite) -> Void)?`, a test seam: when set, `fail` calls it instead of the frameworks, and `trap` still traps.
@@ -537,7 +550,7 @@ import PackageDescription
 
 let package = Package(
     name: "SwiftMockito",
-    platforms: [.macOS(.v26), .iOS(.v26)],   // D1 Fallback: [.macOS(.v14), .iOS(.v17)]
+    platforms: [.macOS(.v26), .iOS(.v26)],   // Task.immediate (resolved D1)
     products: [
         .library(name: "SwiftMockito", targets: ["SwiftMockito"]),
     ],
@@ -714,14 +727,14 @@ git commit -m "feat: add call sites and test-framework reporter"
 - Modify: `Sources/SwiftMockito/ExactArguments.swift` and `Tests/SwiftMockitoTests/StubbingTests.swift` (delete the old error type and use the new fields, so the old code still compiles until Task 7 deletes it)
 
 **Interfaces:**
-- Consumes: D3 from the spike results.
+- Consumes: resolved D3.
 - Produces:
   - `public struct Argument: @unchecked Sendable, CustomStringConvertible`, with `description` (the value through `String(reflecting:)`), `typeName: String`, internal `func matches(_ other: Argument) -> Bool`, and internal `var isSupported: Bool`.
   - `public func arg<T: Equatable>(_ value: T) -> Argument`
   - `public func arg<T: AnyObject & Equatable>(_ value: T) -> Argument`
   - `public func arg<T: AnyObject>(_ value: T) -> Argument`
   - `@_disfavoredOverload public func arg<T>(_ value: T) -> Argument`
-  - `public func arg<each T: Equatable>(_ value: (repeat each T)) -> Argument` (D3 Fallback: label it `arg(tuple:)`)
+  - `public func arg<each T: Equatable>(_ value: (repeat each T)) -> Argument` (resolved D3)
   - `public func arg<T>(type: T.Type) -> Argument`
   - `public struct UnsupportedExactMatchingError: Error, Sendable, CustomStringConvertible` with `member: String`, `position: Int`, `typeName: String`.
 
@@ -1581,16 +1594,18 @@ git commit -m "feat: add typed runtime dispatch, sequential stubs and missing-st
 - Create: `Tests/SwiftMockitoTests/Support/SampleMock.swift`
 - Create: `Tests/SwiftMockitoTests/CaptureTests.swift`
 - Create: `Tests/SwiftMockitoTests/VerifyTests.swift`
+- Create: `Tests/SwiftMockitoTests/CaptureXCTests.swift`
 - Delete: `Sources/SwiftMockito/CaptureContext.swift`, `Sources/SwiftMockito/Verification.swift`, `Tests/SwiftMockitoTests/VerificationTests.swift`
 
 **Interfaces:**
-- Consumes: the Task 7 runtime and `Stub`, plus D1/D1x from the spike results.
+- Consumes: the Task 7 runtime and `Stub`, plus resolved D1/D1x.
 - Produces:
-  - `public final class Capture: @unchecked Sendable` with `@TaskLocal public static var current: Capture?`, `@TaskLocal static var currentSite: CallSite?` (internal), and `public func record<each A>(_ runtime: MockRuntime, _ member: String, key: [Argument], args: repeat each A, effects: Effects = [])`.
+  - `public final class Capture: @unchecked Sendable` with `@TaskLocal public static var current: Capture?`, `@TaskLocal public static var continuesAfterRecord: Bool` (default `false`; set only by Task 9's `verifyInOrder`), `@TaskLocal static var currentSite: CallSite?` (internal), and `public func record<each A>(_ runtime: MockRuntime, _ member: String, key: [Argument], args: repeat each A, effects: Effects = [])`.
   - `public struct CaptureSignal: Error, Sendable` with `public init()`.
   - `struct Recorded { runtime, member, key, argumentsType, effects; qualifiedMember; keyDescription; func checkSupported(at:) -> Bool }`.
-  - Internal `captureAll(_ verb: String, site:isolation:_ body: sending @escaping () async throws -> Void) -> [Recorded]?`, `captureAll(site:_ body: () -> Void) -> [Recorded]`, `exactlyOne(_:_:site:) -> Recorded?`, and `recordedCallsLine(_:) -> String`.
-  - `when`: `@_disfavoredOverload public func when<R>(_ call: @autoclosure () -> R, fileID:filePath:line:column:) -> Stub<R, Never>` and `public func when<R, E: Error>(isolation: isolated (any Actor)? = #isolation, fileID:filePath:line:column:, _ call: sending @escaping () async throws(E) -> R) -> Stub<R, E>`.
+  - `struct CaptureOutcome { recorded: [Recorded]; signalled: Bool }`. `signalled` is true when the body ended by a `CaptureSignal`.
+  - Internal `captureAll(_ verb: String, site:isolation:continuing:_ body: @escaping () async throws -> Void) -> CaptureOutcome?`, `captureAll(site:_ body: () -> Void) -> [Recorded]`, `exactlyOne(_:_:site:) -> Recorded?`, and `recordedCallsLine(_:) -> String`.
+  - `when`: `@_disfavoredOverload public func when<R>(_ call: @autoclosure () -> R, fileID:filePath:line:column:) -> Stub<R, Never>` and `public func when<R, E: Error>(isolation: isolated (any Actor)? = #isolation, fileID:filePath:line:column:, _ call: @escaping () async throws(E) -> R) -> Stub<R, E>`.
   - `verify` and `verifyNever` come in the same two shapes. `verify` returns a `@discardableResult Verification`; `verifyNever` returns `Void`.
   - `public struct Verification` with `called(_ n: Int, …)`, `called(atLeast:, …)`, and `called(atMost:, …)`. Each takes its own `fileID:filePath:line:column:`.
   - `public func verifyNoMoreInteractions(_ mock: Mock, fileID:filePath:line:column:)` and `public func reset(_ mock: Mock)`.
@@ -1619,9 +1634,10 @@ final class SampleMock: Mock, @unchecked Sendable {
         return runtime.invoke("cached(id:)", key: [arg(id)], args: id)
     }
 
-    func fetch(id: String) async throws -> String {
+    nonisolated(nonsending) func fetch(id: String) async throws -> String {
         if let capture = Capture.current {
             capture.record(runtime, "fetch(id:)", key: [arg(id)], args: id, effects: [.async, .throwing])
+            if Capture.continuesAfterRecord { return "" }
             throw CaptureSignal()
         }
         return try await runtime.invokeThrowing("fetch(id:)", key: [arg(id)], args: id)
@@ -1630,9 +1646,19 @@ final class SampleMock: Mock, @unchecked Sendable {
     func save(_ value: String) throws {
         if let capture = Capture.current {
             capture.record(runtime, "save(_:)", key: [arg(value)], args: value, effects: .throwing)
+            if Capture.continuesAfterRecord { return }
             throw CaptureSignal()
         }
         return try runtime.invokeThrowing("save(_:)", key: [arg(value)], args: value)
+    }
+
+    /// Generic return with no placeholder: always signals while recording.
+    func decode<T>(_ type: T.Type) throws -> T {
+        if let capture = Capture.current {
+            capture.record(runtime, "decode(_:)", key: [arg(type: T.self), arg(type: type)], args: type, effects: .throwing)
+            throw CaptureSignal()
+        }
+        return try runtime.invokeThrowing("decode(_:)", key: [arg(type: T.self), arg(type: type)], args: type)
     }
 
     var token: String {
@@ -1735,14 +1761,44 @@ import Testing
         #expect(try await mock.fetch(id: "1") == "one")
     }
 
-    // D1 Primary only. Delete this test if D1 Fallback was ruled.
     @Test func suspendingCaptureExpressionIsMisuse() {
         #expect(failures {
             when {
                 await Task.yield()
                 return try await mock.fetch(id: "1")
             }.thenReturn("x")
-        } == ["when: the expression suspended before reaching a mock call. Keep only the mock call inside the closure. @SwiftMockitoTests/CaptureTests.swift"])
+        } == ["when: the expression suspended before reaching a mock call. Keep only the mock call inside the closure; a mock of a global-actor protocol must be used from a test isolated to that actor. @SwiftMockitoTests/CaptureTests.swift"])
+    }
+
+    // Resolved D1: `nonisolated(nonsending)` async members keep MainActor closures synchronous.
+    @MainActor @Test func mainActorTestCapturesAsyncMember() async throws {
+        when { try await mock.fetch(id: "7") }.thenReturn("main")
+        #expect(try await mock.fetch(id: "7") == "main")
+    }
+
+    @Test func whenOutsideVerifyInOrderStillSignals() {
+        // `continuesAfterRecord` is false here, so the throwing member throws after recording,
+        // and `when` sees exactly one call.
+        #expect(Capture.continuesAfterRecord == false)
+        #expect(failures { when { try mock.save("x") }.thenThrow(SampleError()) }.isEmpty)
+    }
+}
+```
+
+`Tests/SwiftMockitoTests/CaptureXCTests.swift` proves resolved D1x, an XCTest closure that captures `self`:
+
+```swift
+import XCTest
+@testable import SwiftMockito
+
+final class CaptureXCTests: XCTestCase {
+    let mock = SampleMock()
+
+    func testClosureCapturingSelfIsAccepted() async throws {
+        when { try await self.mock.fetch(id: "1") }.thenReturn("xc")
+        let value = try await mock.fetch(id: "1")
+        XCTAssertEqual(value, "xc")
+        verify { try await self.mock.fetch(id: "1") }.called(1)
     }
 }
 ```
@@ -1841,6 +1897,10 @@ public struct CaptureSignal: Error, Sendable {
 /// install around their expression. It is task-local, so parallel tests never share it.
 public final class Capture: @unchecked Sendable {
     @TaskLocal public static var current: Capture?
+    /// Set by `verifyInOrder`. While true, generated throwing members return a
+    /// placeholder after recording instead of throwing `CaptureSignal`, so the
+    /// lines after them are recorded too.
+    @TaskLocal public static var continuesAfterRecord = false
     /// Where the capturing API was called, so dummy traps point at the test line.
     @TaskLocal static var currentSite: CallSite?
 
@@ -1886,39 +1946,55 @@ struct Recorded {
     }
 }
 
+struct CaptureOutcome {
+    let recorded: [Recorded]
+    /// The body ended by a `CaptureSignal` (normal for `when`/`verify`; a misuse
+    /// for `verifyInOrder`, where it means a member had no placeholder).
+    let signalled: Bool
+}
+
 private final class Completion: @unchecked Sendable {
     var finished = false
+    var signalled = false
     var unexpected: (any Error)?
 }
 
-/// Runs `body` with a fresh capture installed. Returns `nil` after reporting a failure
-/// when the expression suspended or threw something other than `CaptureSignal`.
+/// Runs `body` synchronously with a fresh capture installed, via `Task.immediate`.
+/// Capture-mode members never suspend, so the task finishes before this returns.
+/// Returns `nil` after reporting when the expression suspended or threw something
+/// other than `CaptureSignal`.
 func captureAll(
     _ verb: String,
     site: CallSite,
     isolation: isolated (any Actor)?,
-    _ body: sending @escaping () async throws -> Void
-) -> [Recorded]? {
+    continuing: Bool = false,
+    _ body: @escaping () async throws -> Void
+) -> CaptureOutcome? {
     let capture = Capture()
     let completion = Completion()
+    // Not `sending`: that rejects XCTest closures capturing `self`. Safe because
+    // `Task.immediate` runs on this thread and finishes before we return.
+    nonisolated(unsafe) let body = body
     Capture.$current.withValue(capture) {
         Capture.$currentSite.withValue(site) {
-            _ = Task.immediate {
-                _ = isolation
-                do { try await body() } catch is CaptureSignal {} catch { completion.unexpected = error }
-                completion.finished = true
+            Capture.$continuesAfterRecord.withValue(continuing) {
+                _ = Task.immediate {
+                    _ = isolation
+                    do { try await body() } catch is CaptureSignal { completion.signalled = true } catch { completion.unexpected = error }
+                    completion.finished = true
+                }
             }
         }
     }
     guard completion.finished else {
-        Reporter.fail("\(verb): the expression suspended before reaching a mock call. Keep only the mock call inside the closure.", at: site)
+        Reporter.fail("\(verb): the expression suspended before reaching a mock call. Keep only the mock call inside the closure; a mock of a global-actor protocol must be used from a test isolated to that actor.", at: site)
         return nil
     }
     if let error = completion.unexpected {
         Reporter.fail("\(verb): the expression threw \(error) instead of reaching a mock call.", at: site)
         return nil
     }
-    return capture.snapshot
+    return CaptureOutcome(recorded: capture.snapshot, signalled: completion.signalled)
 }
 
 /// Synchronous variant for the autoclosure overloads.
@@ -1952,8 +2028,7 @@ func recordedCallsLine(_ recorded: Recorded) -> String {
 }
 ```
 
-D1x Fallback: drop `sending` from `body` (and from the public overloads below), and put `nonisolated(unsafe) let body = body` before `Task.immediate`.
-D1 Fallback: make this function `async`. It runs `try await Capture.$current.withValue(capture) { try await body() }` (and sets `currentSite` the same way) inside the same `do/catch`, and drops `isolation`, `sending`, `Completion`, and the suspension check. The closure overloads of `when`/`verify`/`verifyNever` become `async`, the tests add `await` to the closure-form calls, and `suspendingCaptureExpressionIsMisuse` is deleted.
+If `nonisolated(unsafe) let body = body` warns ("unnecessary"), keep it anyway only if removing it brings back a `sending`/data-race error; otherwise remove it. Either way, report which one in the task report.
 
 - [ ] **Step 4: Implement `When.swift`**
 
@@ -1977,10 +2052,10 @@ public func when<R, E: Error>(
     isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    _ call: sending @escaping () async throws(E) -> R
+    _ call: @escaping () async throws(E) -> R
 ) -> Stub<R, E> {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let recorded = captureAll("when", site: site, isolation: isolation) { _ = try await call() }
+    let recorded = captureAll("when", site: site, isolation: isolation) { _ = try await call() }?.recorded
     return Stub(target: exactlyOne("when", recorded, site: site).flatMap { stubTarget($0, site: site) })
 }
 
@@ -2040,10 +2115,10 @@ public func verify<R, E: Error>(
     isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    _ call: sending @escaping () async throws(E) -> R
+    _ call: @escaping () async throws(E) -> R
 ) -> Verification {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let recorded = captureAll("verify", site: site, isolation: isolation) { _ = try await call() }
+    let recorded = captureAll("verify", site: site, isolation: isolation) { _ = try await call() }?.recorded
     return applyVerify(exactlyOne("verify", recorded, site: site), site: site)
 }
 
@@ -2061,10 +2136,10 @@ public func verifyNever<R, E: Error>(
     isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    _ call: sending @escaping () async throws(E) -> R
+    _ call: @escaping () async throws(E) -> R
 ) {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let recorded = captureAll("verifyNever", site: site, isolation: isolation) { _ = try await call() }
+    let recorded = captureAll("verifyNever", site: site, isolation: isolation) { _ = try await call() }?.recorded
     applyVerifyNever(exactlyOne("verifyNever", recorded, site: site), site: site)
 }
 
@@ -2136,11 +2211,12 @@ git commit -m "feat: add task-local capture, when, verify and verifyNever"
 - Create: `Tests/SwiftMockitoTests/VerifyInOrderTests.swift`
 
 **Interfaces:**
-- Consumes: `captureAll`, `Capture`, `Recorded`, `recordedCallsLine`, `MockRuntime.callsSnapshot`/`markVerified`, `Reporter`, and D1/D5.
+- Consumes: `captureAll(…, continuing:)`, `CaptureOutcome`, `Capture.continuesAfterRecord`, `Recorded`, `recordedCallsLine`, `MockRuntime.callsSnapshot`/`markVerified`, `Reporter`, and resolved D1/D5.
 - Produces:
-  - `@resultBuilder public enum VerifyInOrderBuilder` with `public typealias Step = () async throws -> Void`. Each expression becomes one `Step`, which swallows its own `CaptureSignal`.
-  - `public func verifyInOrder(isolation: isolated (any Actor)? = #isolation, fileID:filePath:line:column:, @VerifyInOrderBuilder _ calls: () -> [VerifyInOrderBuilder.Step])`, the sync overload.
-  - `public func verifyInOrder(fileID:filePath:line:column:, @VerifyInOrderBuilder _ calls: () -> [VerifyInOrderBuilder.Step]) async`, the async overload (the spec writes `await verifyInOrder { … }`).
+  - `@resultBuilder public enum VerifyInOrderBuilder`, a plain builder: `buildExpression<T>(_ expression: T)` and `buildBlock(_ components: Void...)`.
+  - `public func verifyInOrder(isolation: isolated (any Actor)? = #isolation, fileID:filePath:line:column:, @VerifyInOrderBuilder _ calls: @escaping () async throws -> Void)`, the sync overload. It runs through `captureAll(…, continuing: true)`.
+  - `public func verifyInOrder(fileID:filePath:line:column:, @VerifyInOrderBuilder _ calls: () async throws -> Void) async`, the async overload (the spec writes `await verifyInOrder { … }`).
+  - Both set `Capture.continuesAfterRecord`, so throwing members return placeholders and every line is recorded. A `CaptureSignal` that still escapes means some member had no placeholder (for example, a generic return). That is reported as a misuse naming the member.
   - Neither overload throws. Order is global across mocks (`CallRecord.id` comes from `CallClock`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2235,10 +2311,27 @@ import Testing
     @Test func emptyBlockIsMisuse() {
         #expect(failures { verifyInOrder { } } == ["verifyInOrder: expected at least one mock call, recorded 0."])
     }
+
+    @Test func memberWithoutPlaceholderIsMisuse() {
+        #expect(failures {
+            verifyInOrder {
+                try mock.decode(Int.self)
+                mock.cached(id: "1")
+            }
+        } == ["verifyInOrder: SampleMock.decode(_:) has no placeholder return value, so the calls after it could not be recorded. Call provideDummy(_:) for its return type."])
+    }
+
+    @MainActor @Test func syncOverloadOnMainActorRecordsAsyncLines() {
+        _ = mock.cached(id: "1")
+        #expect(failures {
+            verifyInOrder {
+                mock.cached(id: "1")
+                try await mock.fetch(id: "2")
+            }
+        } == ["verifyInOrder: SampleMock.fetch(id:) with (\"2\") was not called after SampleMock.cached(id:) with (\"1\").\nNo calls to fetch(id:) were recorded."])
+    }
 }
 ```
-
-D5 Fallback: write each throwing line inside `verifyInOrder` as `try? …` in these tests.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -2250,16 +2343,12 @@ Expected: compile failure, because `verifyInOrder` is not in scope.
 `Sources/SwiftMockito/VerifyInOrder.swift`:
 
 ```swift
+/// Accepts plain, `try` and `await` lines. Lines are evaluated in order inside the
+/// capture; with `Capture.continuesAfterRecord` set, throwing members do not stop the block.
 @resultBuilder
 public enum VerifyInOrderBuilder {
-    public typealias Step = () async throws -> Void
-
-    /// Defers each line, so one throwing member does not stop the lines after it.
-    public static func buildExpression<T>(_ expression: @autoclosure @escaping () async throws -> T) -> Step {
-        { _ = try await expression() }
-    }
-
-    public static func buildBlock(_ steps: Step...) -> [Step] { steps }
+    public static func buildExpression<T>(_ expression: T) {}
+    public static func buildBlock(_ components: Void...) {}
 }
 
 /// Checks that the calls in `calls` happened in this relative order. Unrelated calls may
@@ -2268,42 +2357,43 @@ public func verifyInOrder(
     isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    @VerifyInOrderBuilder _ calls: () -> [VerifyInOrderBuilder.Step]
+    @VerifyInOrderBuilder _ calls: @escaping () async throws -> Void
 ) {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let steps = calls()
-    applyInOrder(captureAll("verifyInOrder", site: site, isolation: isolation) {
-        for step in steps { try await runStep(step) }
-    }, site: site)
+    applyInOrder(captureAll("verifyInOrder", site: site, isolation: isolation, continuing: true, calls), site: site)
 }
 
 public func verifyInOrder(
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    @VerifyInOrderBuilder _ calls: () -> [VerifyInOrderBuilder.Step]
+    @VerifyInOrderBuilder _ calls: () async throws -> Void
 ) async {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
     let capture = Capture()
-    let steps = calls()
+    var signalled = false
     do {
         try await Capture.$current.withValue(capture) {
             try await Capture.$currentSite.withValue(site) {
-                for step in steps { try await runStep(step) }
+                try await Capture.$continuesAfterRecord.withValue(true) { try await calls() }
             }
         }
+    } catch is CaptureSignal {
+        signalled = true
     } catch {
         Reporter.fail("verifyInOrder: the block threw \(error) instead of reaching a mock call.", at: site)
         return
     }
-    applyInOrder(capture.snapshot, site: site)
+    applyInOrder(CaptureOutcome(recorded: capture.snapshot, signalled: signalled), site: site)
 }
 
-private func runStep(_ step: VerifyInOrderBuilder.Step) async throws {
-    do { try await step() } catch is CaptureSignal {}
-}
-
-private func applyInOrder(_ recorded: [Recorded]?, site: CallSite) {
-    guard let recorded else { return }
+private func applyInOrder(_ outcome: CaptureOutcome?, site: CallSite) {
+    guard let outcome else { return }
+    if outcome.signalled {
+        let member = outcome.recorded.last?.qualifiedMember ?? "a mock member"
+        Reporter.fail("verifyInOrder: \(member) has no placeholder return value, so the calls after it could not be recorded. Call provideDummy(_:) for its return type.", at: site)
+        return
+    }
+    let recorded = outcome.recorded
     guard !recorded.isEmpty else {
         Reporter.fail("verifyInOrder: expected at least one mock call, recorded 0.", at: site)
         return
@@ -2332,8 +2422,7 @@ private func applyInOrder(_ recorded: [Recorded]?, site: CallSite) {
 }
 ```
 
-`emptyBlockIsMisuse` needs `buildBlock()` with zero steps; `Step...` accepts that. If `verifyInOrder { }` gives "no calls to buildBlock", add `public static func buildBlock() -> [Step] { [] }`.
-D5 Fallback: change `buildExpression` to `public static func buildExpression<T>(_ expression: T) -> Step { {} }` and make both overloads take `() async throws -> Void` and run it whole inside the capture, catching `CaptureSignal` once.
+If `verifyInOrder { }` fails with "no calls to buildBlock", add `public static func buildBlock() {}`. In an `async` context, `await verifyInOrder { … }` resolves to the async overload; in a sync context, the sync overload is the only viable one (spike probe B5).
 
 - [ ] **Step 4: Run tests**
 
@@ -2361,6 +2450,7 @@ git commit -m "feat: add verifyInOrder with sync and async overloads"
 - Produces:
   - `public func provideDummy<T: Sendable>(_ value: T)`
   - `public enum Dummies { public static func resolve<T>(_ type: T.Type, for member: String, fallback: (() -> T)? = nil) -> T }`. Lookup order: registered value, then built-in, then fallback. If none applies, it reports `MissingDummyError` and traps.
+  - `public static func placeholder<T>(_ type: T.Type, fallback: (() -> T)? = nil) -> T?`, the same lookup order as `resolve` but returning `nil` instead of trapping. Generated throwing members call it while `Capture.continuesAfterRecord` is set (resolved D5).
   - Internal `static func lookup<T>(_ type: T.Type) -> T?` (registered value, then built-in; no fallback, no trap), used for recursive built-ins.
   - `public struct MissingDummyError: Error, Sendable, CustomStringConvertible` with `typeName` and `member`.
 
@@ -2416,6 +2506,12 @@ private struct Unbuildable {}
         _ = Dummies.resolve(Unbuildable.self, for: "m", fallback: { Unbuildable() })   // must not trap
     }
 
+    @Test func placeholderNeverTraps() {
+        #expect(Dummies.placeholder(Unbuildable.self) == nil)
+        #expect(Dummies.placeholder(String.self) == "")
+        #expect(Dummies.placeholder(Unbuildable.self, fallback: { Unbuildable() }) != nil)
+    }
+
     @Test func missingDummyTraps() async {
         await #expect(processExitsWith: .failure) {
             _ = Dummies.resolve(Unbuildable.self, for: "MockStore.thing()")
@@ -2454,6 +2550,11 @@ public enum Dummies {
         if let fallback { return fallback() }
         let error = MissingDummyError(typeName: String(reflecting: type), member: member)
         Reporter.trap(error.description, at: Capture.currentSite ?? CallSite())
+    }
+
+    /// Non-trapping variant for throwing members recorded inside `verifyInOrder`.
+    public static func placeholder<T>(_ type: T.Type, fallback: (() -> T)? = nil) -> T? {
+        lookup(type) ?? fallback?()
     }
 
     static func lookup<T>(_ type: T.Type) -> T? {
@@ -2563,12 +2664,14 @@ These mock files are the exact output the generator must produce; Task 13 compar
 - Create: `Tests/SwiftMockitoTests/ScreenAcceptanceTests.swift`
 
 **Interfaces:**
-- Consumes: the whole runtime from Tasks 5–10, plus D2, D3, D4, D5.
+- Consumes: the whole runtime from Tasks 5–10, plus the resolved decisions.
 - Produces: the golden-file conventions that every later generator task follows:
   - The header line is `// Generated by SwiftMockito from <Protocol>. Do not edit.`, followed by the imports and a blank line. Imports are the protocol file's own imports (excluding SwiftMockito) plus `import SwiftMockito`, sorted; then `@testable import <Module>` (internal protocol) or `import <Module>` (public protocol), but only when the protocol's module differs from the test module.
-  - Then a global-actor attribute line if the protocol has one (D4 a), then `<access>final class Mock<P>: Mock, <P> {`. Inside: an `init(fileID:filePath:line:column:)` passing `name: "Mock<P>"`, then the members in declaration order (inherited protocols first), each preceded by one blank line, then the private `_dummy<Type>` helpers, then the nested `_Dummy<P>` classes.
+  - Then a global-actor attribute line if the protocol has one (D4 a), then `<access>final class Mock<P>: Mock, <P>, @unchecked Sendable {` (A6). Inside: an `init(fileID:filePath:line:column:)` passing `name: "Mock<P>"`, then the members in declaration order (inherited protocols first), each preceded by one blank line, then the private `_dummy<Type>` helpers, then the nested `_Dummy<P>` classes.
   - Member identity strings: `name(label:label:)`, with `_` for an unlabeled parameter. A getter is `name` and a setter is `name=`. Subscripts are `subscript(_:)` and `subscript(_:)=`. Overloads that share an identity get a space and their full signature appended: `item(id:) (Int) -> String`.
-  - Key: one `arg(x)` per non-closure parameter, in order. Generic methods get one `arg(type: T.self)` per generic parameter first. Metatype parameters use `arg(type: x)`. Tuple parameters use `arg(x)` (D3 Fallback: `arg(tuple: x)`). Closure-typed parameters are left out of `key:` and kept in `args:`; this includes optional closures and typealiases of closures.
+  - Key: one `arg(x)` per non-closure parameter, in order. Generic methods get one `arg(type: T.self)` per generic parameter first. Metatype parameters use `arg(type: x)`. Tuple parameters use `arg(x)` (D3). Closure-typed parameters are left out of `key:` and kept in `args:`; this includes optional closures and typealiases of closures.
+  - Async members (methods, and properties with an `async` getter) of a protocol **without** a global actor are prefixed `nonisolated(nonsending) ` (resolved D1). Members of a global-actor protocol get no prefix.
+  - Throwing members, while recording: `capture.record(…)`, then one continue line, then `throw CaptureSignal()` (resolved D5). The continue line is `if Capture.continuesAfterRecord { return }` for a `Void` return. For any other return `R`, it is `if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(<metatype R>[, fallback: <same fallback as non-throwing>]) { return placeholder }`.
   - `effects:` is omitted when empty. One effect is `.throwing` or `.async`; both are `[.async, .throwing]`.
   - The dummy-resolve metatype is written `(any P).self` for `any P` types and `(A, B).self` for tuples; other types are written as-is followed by `.self`.
   - Four-space indentation, no trailing whitespace, and the file ends with one newline.
@@ -2626,7 +2729,7 @@ struct UserRepository {
 import Foundation
 import SwiftMockito
 
-final class MockClient: Mock, Client {
+final class MockClient: Mock, Client, @unchecked Sendable {
     init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) {
         super.init(name: "MockClient", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))
     }
@@ -2664,9 +2767,10 @@ final class MockClient: Mock, Client {
         return runtime.invoke("cached(id:)", key: [arg(id)], args: id)
     }
 
-    func fetch(id: String) async throws -> User {
+    nonisolated(nonsending) func fetch(id: String) async throws -> User {
         if let capture = Capture.current {
             capture.record(runtime, "fetch(id:)", key: [arg(id)], args: id, effects: [.async, .throwing])
+            if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(User.self, fallback: Self._dummyUser) { return placeholder }
             throw CaptureSignal()
         }
         return try await runtime.invokeThrowing("fetch(id:)", key: [arg(id)], args: id)
@@ -2675,6 +2779,7 @@ final class MockClient: Mock, Client {
     func save(_ user: User) throws {
         if let capture = Capture.current {
             capture.record(runtime, "save(_:)", key: [arg(user)], args: user, effects: .throwing)
+            if Capture.continuesAfterRecord { return }
             throw CaptureSignal()
         }
         return try runtime.invokeThrowing("save(_:)", key: [arg(user)], args: user)
@@ -2720,7 +2825,7 @@ protocol Catalog {
 import Foundation
 import SwiftMockito
 
-final class MockCatalog: Mock, Catalog {
+final class MockCatalog: Mock, Catalog, @unchecked Sendable {
     init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) {
         super.init(name: "MockCatalog", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))
     }
@@ -2761,6 +2866,7 @@ final class MockCatalog: Mock, Catalog {
     func decode<T: Decodable>(_ data: Data, as type: T.Type) throws -> T {
         if let capture = Capture.current {
             capture.record(runtime, "decode(_:as:)", key: [arg(type: T.self), arg(data), arg(type: type)], args: data, type, effects: .throwing)
+            if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(T.self) { return placeholder }
             throw CaptureSignal()
         }
         return try runtime.invokeThrowing("decode(_:as:)", key: [arg(type: T.self), arg(data), arg(type: type)], args: data, type)
@@ -2810,14 +2916,14 @@ protocol Screen {
 }
 ```
 
-`Tests/SwiftMockitoTests/Fixtures/MockScreen.swift` uses D4 a. For b, move `@MainActor` from the class line onto each member; for c, also put `nonisolated` before `final class`. If D4 is unsupported, skip the Screen fixture and test, and record that in the report.
+`Tests/SwiftMockitoTests/Fixtures/MockScreen.swift` (D4 a; a global-actor protocol, so its members get no `nonisolated(nonsending)` prefix):
 
 ```swift
 // Generated by SwiftMockito from Screen. Do not edit.
 import SwiftMockito
 
 @MainActor
-final class MockScreen: Mock, Screen {
+final class MockScreen: Mock, Screen, @unchecked Sendable {
     init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) {
         super.init(name: "MockScreen", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))
     }
@@ -2842,7 +2948,7 @@ final class MockScreen: Mock, Screen {
 
 - [ ] **Step 2: Write acceptance tests**
 
-`Tests/SwiftMockitoTests/ClientAcceptanceTests.swift` contains the spec's example. Only the D1, D2, and D5 rulings may change its syntax.
+`Tests/SwiftMockitoTests/ClientAcceptanceTests.swift` contains the spec's example. The only change from it is the annotated `thenAnswer` closure (resolved D2).
 
 ```swift
 import Testing
@@ -2871,9 +2977,10 @@ import Testing
     }
 
     @Test func legacyLoadDeliversUser() async throws {
-        when(client.load(id: "42", completion: { _ in })).thenAnswer { id, completion in
-            completion(.success(User(id: id, name: "Gytis")))
-        }
+        when(client.load(id: "42", completion: { _ in }))
+            .thenAnswer { (id: String, completion: @escaping (Result<User, Error>) -> Void) in
+                completion(.success(User(id: id, name: "Gytis")))
+            }
 
         let user = try await sut.legacyUser(id: "42")
 
@@ -2941,7 +3048,7 @@ import Testing
 }
 ```
 
-D2 Fallback: write the `legacyLoadDeliversUser` answer as `{ (id: String, completion: @escaping (Result<User, Error>) -> Void) in … }`.
+The answer closure is annotated (resolved D2): the compiler cannot infer `completion`'s type from the body. Single-parameter answers such as `thenAnswer { id in User(id: id, name: "x") }` infer fine.
 
 `Tests/SwiftMockitoTests/CatalogAcceptanceTests.swift`:
 
@@ -3676,7 +3783,7 @@ git commit -m "feat: parse marked protocols into a mock model with diagnostics"
   - `public struct GeneratorResult { files: [String: String] /* file name → contents */; diagnostics: [GeneratorDiagnostic]; var hasErrors: Bool }`
   - `public enum Generator { static func generate(_:) -> GeneratorResult; static func run(arguments: [String]) -> Int32 }`. `run` parses CLI arguments, reads files, writes outputs (skipping files whose contents are unchanged), prints diagnostics to stderr, and returns 0 on success, 1 on generation errors, or 2 on usage errors.
   - CLI: `SwiftMockitoGenerator generate --test-module <M> --output <dir> --marked <file>... [--source <Module>=<file>...] [--source-dir <Module>=<dir>...] [--expect <MockP.swift>...]`. Every name passed with `--expect` is always written: a mock, an `#error(...)` file when generation failed, or a comment-only file when the parser found no such marker. Build systems that declared the file therefore never miss an output.
-  - `final class DummySynthesizer { init(index:model:); func fallback(for type: String, member: String, genericNames: Set<String>) -> String?; var helpers: [String]; var warnings: [GeneratorDiagnostic] }`
+  - `final class DummySynthesizer { init(index:model:); func fallback(for type: String, member: String, genericNames: Set<String>, warn: Bool = true) -> String?; var helpers: [String]; var warnings: [GeneratorDiagnostic] }`
   - `struct MockEmitter { init(model:synthesizer:); func emit() -> String }`
 
 - [ ] **Step 1: Write the failing snapshot and CLI tests**
@@ -3859,7 +3966,7 @@ struct MockEmitter {
         model.imports.forEach { w.line($0) }
         w.line()
         if let actor = model.globalActor { w.line("@\(actor)") }
-        w.block("\(model.access)final class \(model.mockName): Mock, \(model.protocolName)") { w in
+        w.block("\(model.access)final class \(model.mockName): Mock, \(model.protocolName), @unchecked Sendable") { w in
             w.block("\(model.access)init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column)") { w in
                 w.line("super.init(name: \"\(model.mockName)\", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))")
             }
@@ -3879,7 +3986,7 @@ struct MockEmitter {
         let returns = m.returnType.map { " -> \($0)" } ?? ""
         let whereClause = m.genericWhereClause.map { " \($0)" } ?? ""
         let key = keyList(genericTypes: m.genericParameters.map(\.name), parameters: m.parameters)
-        w.block("\(model.access)func \(m.name)\(generics)(\(params))\(effects)\(returns)\(whereClause)") { w in
+        w.block("\(model.access)\(nonsending(m.isAsync))func \(m.name)\(generics)(\(params))\(effects)\(returns)\(whereClause)") { w in
             emitBody(identity: m.identity, key: key, args: argsList(m.parameters.map(\.name)),
                      isAsync: m.isAsync, isThrowing: m.isThrowing, returnType: m.returnType,
                      genericNames: Set(m.genericParameters.map(\.name)), &w)
@@ -3888,7 +3995,7 @@ struct MockEmitter {
 
     private func emitProperty(_ p: Property, _ w: inout CodeWriter) {
         let getterEffects = (p.getterAsync ? " async" : "") + (p.getterThrows ? " throws" : "")
-        w.block("\(model.access)var \(p.name): \(p.type)") { w in
+        w.block("\(model.access)\(nonsending(p.getterAsync))var \(p.name): \(p.type)") { w in
             guard p.hasSetter || !getterEffects.isEmpty else {
                 emitBody(identity: p.name, key: "[]", args: "", isAsync: false, isThrowing: false,
                          returnType: p.type, genericNames: [], &w)
@@ -3943,6 +4050,14 @@ struct MockEmitter {
         w.block("if let capture = Capture.current") { w in
             w.line("capture.record(runtime, \"\(identity)\", key: \(key)\(args)\(effects))")
             if isThrowing {
+                // Resolved D5: inside verifyInOrder, return a placeholder instead of throwing.
+                if let returnType {
+                    let fallback = genericNames.contains(returnType) ? nil
+                        : synthesizer.fallback(for: returnType, member: member, genericNames: genericNames, warn: false)
+                    w.line("if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(\(metatype(returnType))\(fallback.map { ", fallback: \($0)" } ?? "")) { return placeholder }")
+                } else {
+                    w.line("if Capture.continuesAfterRecord { return }")
+                }
                 w.line("throw CaptureSignal()")
             } else if let returnType {
                 let fallback = synthesizer.fallback(for: returnType, member: member, genericNames: genericNames)
@@ -3959,6 +4074,12 @@ struct MockEmitter {
 
     // MARK: Pieces
 
+    /// Resolved D1: async members of a protocol without a global actor run on the caller's
+    /// executor, so a `@MainActor` test's `when { … }` closure never hops before recording.
+    private func nonsending(_ isAsync: Bool) -> String {
+        isAsync && model.globalActor == nil ? "nonisolated(nonsending) " : ""
+    }
+
     /// Methods: `_ name: T` / `label name: T` / `name: T`. Subscripts: `name: T` means no label.
     private func declaration(_ p: Parameter, subscriptStyle: Bool) -> String {
         switch p.label {
@@ -3971,7 +4092,7 @@ struct MockEmitter {
     private func keyList(genericTypes: [String], parameters: [Parameter]) -> String {
         let types = genericTypes.map { "arg(type: \($0).self)" }
         let values = parameters.filter { !$0.isClosure }.map { p in
-            p.isMetatype ? "arg(type: \(p.name))" : "arg(\(p.name))"   // D3 Fallback: p.isTuple → "arg(tuple: \(p.name))"
+            p.isMetatype ? "arg(type: \(p.name))" : "arg(\(p.name))"
         }
         return "[" + (types + values).joined(separator: ", ") + "]"
     }
@@ -4015,7 +4136,9 @@ final class DummySynthesizer {
     }
 
     /// The `fallback:` argument for a type the runtime has no built-in for, or nil.
-    func fallback(for type: String, member: String, genericNames: Set<String>) -> String? {
+    /// `warn: false` is used for throwing members' placeholders: no dummy there only
+    /// matters inside `verifyInOrder`, which reports it at runtime.
+    func fallback(for type: String, member: String, genericNames: Set<String>, warn: Bool = true) -> String? {
         let t = type.trimmingCharacters(in: .whitespaces)
         if BuiltIns.covers(t) { return nil }
         guard case .structDecl(let decl)? = index.typeDecl(named: t) else { return nil }
@@ -4235,7 +4358,7 @@ git commit -m "feat: emit mocks matching the golden fixtures and add the generat
 
 **Interfaces:**
 - Consumes: `SourceIndex.typeDecl(named:)`, `ProtocolResolver.members(of:marker:)`, and `metatype(_:)`.
-- Produces: `DummySynthesizer.fallback(for:member:genericNames:)`. It covers structs (an accessible init, or the memberwise init), enums (the first case, with payload dummies), classes (an accessible init), protocols and `any P` (a nested `_Dummy<P>` class whose members trap), tuples (an inline closure), and `Result<S, F>` (`.success` with `S`'s dummy). It emits warnings at the marker for unknown or SDK types, generic return types, types with no accessible initializer, enums with no cases, and recursive types.
+- Produces: `DummySynthesizer.fallback(for:member:genericNames:warn:)`. It covers structs (an accessible init, or the memberwise init), enums (the first case, with payload dummies), classes (an accessible init), protocols and `any P` (a nested `_Dummy<P>` class whose members trap), tuples (an inline closure), and `Result<S, F>` (`.success` with `S`'s dummy). It emits warnings at the marker for unknown or SDK types, generic return types, types with no accessible initializer, enums with no cases, and recursive types.
 
 - [ ] **Step 1: Write the fixture and golden**
 
@@ -4282,7 +4405,7 @@ protocol Store {
 import Foundation
 import SwiftMockito
 
-final class MockStore: Mock, Store {
+final class MockStore: Mock, Store, @unchecked Sendable {
     init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column) {
         super.init(name: "MockStore", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))
     }
@@ -4476,7 +4599,7 @@ Expected: the `Store` snapshot and the synthesis tests fail, because the enum/cl
 
 - [ ] **Step 4: Implement the synthesizer**
 
-Replace `DummySynthesizer.fallback(for:member:genericNames:)` with the full algorithm. `t` is the trimmed type string, and `member` is `"Mock<P>.<identity>"` (used in warnings). Warnings use `.warning(_:at: model.marker)` and are deduplicated per mock.
+Replace `DummySynthesizer.fallback(for:member:genericNames:warn:)` with the full algorithm. Keep the signature. When `warn` is false, follow the same steps but record no warnings (used for throwing members' placeholders). `t` is the trimmed type string, and `member` is `"Mock<P>.<identity>"` (used in warnings). Warnings use `.warning(_:at: model.marker)` and are deduplicated per mock.
 
 1. `BuiltIns.covers(t)` → return `nil` (the runtime has it).
 2. If `t` is in `genericNames`, warn "`<member>`: cannot build a dummy for generic return type `t`; call provideDummy(_:) for each concrete `t` you stub" and return `nil`.
@@ -4747,9 +4870,10 @@ import SwiftMockito
     }
 
     @Test func legacyLoadDeliversUser() async throws {
-        when(client.load(id: "42", completion: { _ in })).thenAnswer { id, completion in
-            completion(.success(User(id: id, name: "Gytis")))
-        }
+        when(client.load(id: "42", completion: { _ in }))
+            .thenAnswer { (id: String, completion: @escaping (Result<User, Error>) -> Void) in
+                completion(.success(User(id: id, name: "Gytis")))
+            }
 
         let user = try await sut.legacyUser(id: "42")
 
@@ -4771,7 +4895,6 @@ import SwiftMockito
 }
 ```
 
-Apply the same D1/D2/D5 syntax rulings as Task 11.
 
 - [ ] **Step 3: Run the fixture to verify it fails**
 
@@ -4996,10 +5119,10 @@ git commit -m "feat: support Xcode project targets and checked-in mock verificat
 Write these sections. Take every snippet from the acceptance tests and copy it rather than inventing new code:
 
 1. What it is: one paragraph, using Flutter Mockito vocabulary.
-2. Installation: `.package(url: "https://github.com/<owner>/SwiftMockito.git", from: "0.1.0")`, using this repository's real `git remote get-url origin`, a test-target dependency on `SwiftMockito`, and `plugins: [.plugin(name: "SwiftMockitoPlugin", package: "SwiftMockito")]`. Xcode setup is steps 2–3 of `docs/xcode-plugin-verification.md`. Requirements: Swift 6.2 and macOS 26 / iOS 26 under D1 Primary, or the Fallback minimums.
+2. Installation: `.package(url: "https://github.com/<owner>/SwiftMockito.git", from: "0.1.0")`, using this repository's real `git remote get-url origin`, a test-target dependency on `SwiftMockito`, and `plugins: [.plugin(name: "SwiftMockitoPlugin", package: "SwiftMockito")]`. Xcode setup is steps 2–3 of `docs/xcode-plugin-verification.md`. Requirements: Swift 6.2, macOS 26 / iOS 26 (`Task.immediate`, resolved D1).
 3. Generating mocks: `@GenerateMock(Client.self) enum Mocks {}`. Internal protocols need `@testable import`. Show CLI usage for checked-in mocks (the `check.sh` invocation).
-4. Stubbing: `thenReturn` with one value and in sequence, `thenThrow` (throwing members only, enforced at compile time), `thenAnswer` with a callback (in the syntax the D2 outcome allows), and the rule that the newest stub wins.
-5. Verifying: `verify`, `.called(n)`, `.called(atLeast:)`, `.called(atMost:)`, `verifyNever`, `verifyInOrder` (sync and `await`), `verifyNoMoreInteractions`, `reset`, and property setters via `verify { client.token = "" }`.
+4. Stubbing: `thenReturn` with one value and in sequence; `thenThrow` (throwing members only: a compile error for `when(expr)`, a runtime failure for the closure form); `thenAnswer`, including the annotated-parameter form needed for callbacks (resolved D2); and the rule that the newest stub wins.
+5. Verifying: `verify`, `.called(n)`, `.called(atLeast:)`, `.called(atMost:)`, `verifyNever`, `verifyInOrder` (sync and `await`, with `try` lines; a generic-returning member inside it needs `provideDummy`), `verifyNoMoreInteractions`, `reset`, and property setters via `verify { client.token = "" }`. Mocks of `@MainActor` protocols are stubbed and verified from `@MainActor` tests.
 6. Exact matching: the spec's rules, and why there are no matchers.
 7. Unstubbed calls: a throwing member throws `MissingStubError`. A non-throwing member with a return value reports the failure **and then traps, which ends the whole test process**. A `Void` member is recorded and returns.
 8. Dummies and `provideDummy`, including an example of the build warning.
