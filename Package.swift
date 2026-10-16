@@ -3,20 +3,20 @@
 import PackageDescription
 
 let package = Package(
-    name: "MockitoSwift",
+    name: "SwiftMockito",
     products: [
         .library(
-            name: "MockitoSwift",
-            targets: ["MockitoSwift"]
+            name: "SwiftMockito",
+            targets: ["SwiftMockito"]
         )
     ],
     targets: [
         .target(
-            name: "MockitoSwift"
+            name: "SwiftMockito"
         ),
         .testTarget(
-            name: "MockitoSwiftTests",
-            dependencies: ["MockitoSwift"]
+            name: "SwiftMockitoTests",
+            dependencies: ["SwiftMockito"]
         )
     ]
 )

@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import MockitoSwift
+@testable import SwiftMockito
 
 /// A hand-written stand-in for a generated mock. Task 4/5 will generate this shape from a
 /// `@GenerateMock` protocol; for Task 3 we drive the same capture/dispatch contract by

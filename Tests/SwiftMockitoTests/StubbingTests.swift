@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-import MockitoSwift
+import SwiftMockito
 
 final class StubbingTests: XCTestCase {
     private enum SampleError: Error, Equatable {

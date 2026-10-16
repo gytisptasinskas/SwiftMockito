@@ -1,4 +1,4 @@
-# MockitoSwift design
+# SwiftMockito design
 
 ## Intent
 
@@ -68,11 +68,11 @@ SPM build-tool plugin scans marked test sources through SwiftSyntax and emits de
 
 ## Package layout
 
-- `MockitoSwift`: runtime and public API.
-- `MockitoSwiftMacros`: marker macro declarations.
-- `MockitoSwiftGenerator`: SwiftSyntax generator executable.
-- `MockitoSwiftPlugin`: SPM build-tool plugin.
-- `MockitoSwiftTests`: XCTest runtime tests.
+- `SwiftMockito`: runtime and public API.
+- `SwiftMockitoMacros`: marker macro declarations.
+- `SwiftMockitoGenerator`: SwiftSyntax generator executable.
+- `SwiftMockitoPlugin`: SPM build-tool plugin.
+- `SwiftMockitoTests`: XCTest runtime tests.
 - `GeneratorTests`: fixture-driven snapshot/compile tests.
 
 ## Acceptance proof

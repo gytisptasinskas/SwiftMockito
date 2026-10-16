@@ -1,4 +1,4 @@
-# MockitoSwift Implementation Plan
+# SwiftMockito Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -35,17 +35,17 @@
 
 **Files:**
 - Create: `Package.swift`
-- Create: `Sources/MockitoSwift/Mock.swift`
-- Create: `Sources/MockitoSwift/Invocation.swift`
-- Create: `Sources/MockitoSwift/Errors.swift`
-- Create: `Tests/MockitoSwiftTests/InvocationTests.swift`
+- Create: `Sources/SwiftMockito/Mock.swift`
+- Create: `Sources/SwiftMockito/Invocation.swift`
+- Create: `Sources/SwiftMockito/Errors.swift`
+- Create: `Tests/SwiftMockitoTests/InvocationTests.swift`
 
 **Interfaces:**
 - Produces: `public class Mock`, `public struct Invocation`, `public enum InvocationPhase`, and `public struct MissingStubError: Error`.
 
 - [ ] **Step 1: Write failing XCTest cases for member identity, argument labels, source location, and `MissingStubError` description.**
 - [ ] **Step 2: Run `swift test --filter InvocationTests`; expect compile failure because runtime module is absent.**
-- [ ] **Step 3: Create SPM package products and implement immutable invocation metadata in `Sources/MockitoSwift/Invocation.swift`.**
+- [ ] **Step 3: Create SPM package products and implement immutable invocation metadata in `Sources/SwiftMockito/Invocation.swift`.**
 - [ ] **Step 4: Add `Mock` ownership of runtime identity and typed diagnostic errors in `Mock.swift` and `Errors.swift`.**
 - [ ] **Step 5: Run `swift test --filter InvocationTests`; expect PASS.**
 - [ ] **Step 6: Commit `feat: scaffold mock runtime`.**
@@ -53,10 +53,10 @@
 ### Task 2: Exact stubs and normal dispatch
 
 **Files:**
-- Create: `Sources/MockitoSwift/MockRuntime.swift`
-- Create: `Sources/MockitoSwift/ExactArguments.swift`
-- Create: `Sources/MockitoSwift/Stubbing.swift`
-- Create: `Tests/MockitoSwiftTests/StubbingTests.swift`
+- Create: `Sources/SwiftMockito/MockRuntime.swift`
+- Create: `Sources/SwiftMockito/ExactArguments.swift`
+- Create: `Sources/SwiftMockito/Stubbing.swift`
+- Create: `Tests/SwiftMockitoTests/StubbingTests.swift`
 
 **Interfaces:**
 - Consumes: `Mock`, `Invocation`, `MissingStubError`.
@@ -73,9 +73,9 @@
 ### Task 3: Capture mode and verification
 
 **Files:**
-- Create: `Sources/MockitoSwift/CaptureContext.swift`
-- Create: `Sources/MockitoSwift/Verification.swift`
-- Create: `Tests/MockitoSwiftTests/VerificationTests.swift`
+- Create: `Sources/SwiftMockito/CaptureContext.swift`
+- Create: `Sources/SwiftMockito/Verification.swift`
+- Create: `Tests/SwiftMockitoTests/VerificationTests.swift`
 
 **Interfaces:**
 - Consumes: `MockRuntime`, `Invocation`, exact argument encoding.
@@ -92,9 +92,9 @@
 ### Task 4: SwiftSyntax generator for protocol fixtures
 
 **Files:**
-- Create: `Sources/MockitoSwiftGenerator/main.swift`
-- Create: `Sources/MockitoSwiftGenerator/ProtocolParser.swift`
-- Create: `Sources/MockitoSwiftGenerator/MockEmitter.swift`
+- Create: `Sources/SwiftMockitoGenerator/main.swift`
+- Create: `Sources/SwiftMockitoGenerator/ProtocolParser.swift`
+- Create: `Sources/SwiftMockitoGenerator/MockEmitter.swift`
 - Create: `Tests/GeneratorTests/Fixtures/Service.swift`
 - Create: `Tests/GeneratorTests/Fixtures/Expected/MockService.swift`
 - Create: `Tests/GeneratorTests/GeneratorTests.swift`
@@ -114,8 +114,8 @@
 ### Task 5: Macro declaration, SPM plugin, and integration test
 
 **Files:**
-- Create: `Sources/MockitoSwiftMacros/GenerateMock.swift`
-- Create: `Plugins/MockitoSwiftPlugin/plugin.swift`
+- Create: `Sources/SwiftMockitoMacros/GenerateMock.swift`
+- Create: `Plugins/SwiftMockitoPlugin/plugin.swift`
 - Create: `Tests/PluginIntegrationTests/Package.swift`
 - Create: `Tests/PluginIntegrationTests/Tests/AppTests/ClientTests.swift`
 - Create: `Tests/PluginIntegrationTests/Tests/AppTests/Client.swift`
@@ -149,7 +149,7 @@
 - [ ] **Step 3: Configure Swift 6 CI matrix on supported macOS/Xcode runner.**
 - [ ] **Step 4: Run `swift test`; expect all runtime, generator, integration, and example tests PASS.**
 - [ ] **Step 5: Run `swift package describe`; expect four library/executable/plugin products resolve.**
-- [ ] **Step 6: Commit `docs: document MockitoSwift usage`.**
+- [ ] **Step 6: Commit `docs: document SwiftMockito usage`.**
 
 ## Self-review
 

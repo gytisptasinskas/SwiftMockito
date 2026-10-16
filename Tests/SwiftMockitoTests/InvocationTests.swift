@@ -1,5 +1,5 @@
 import XCTest
-import MockitoSwift
+import SwiftMockito
 
 final class InvocationTests: XCTestCase {
     func testInvocationPreservesMemberIdentityAndArgumentLabels() {
