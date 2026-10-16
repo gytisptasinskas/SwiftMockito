@@ -1,32 +1,22 @@
-// swift-tools-version: 6.4
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+// swift-tools-version: 6.0
 
 import PackageDescription
 
 let package = Package(
-    name: "SwiftMockito",
+    name: "MockitoSwift",
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
-            name: "SwiftMockito",
-            targets: ["SwiftMockito"]
-        ),
+            name: "MockitoSwift",
+            targets: ["MockitoSwift"]
+        )
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "SwiftMockito",
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
+            name: "MockitoSwift"
         ),
         .testTarget(
-            name: "SwiftMockitoTests",
-            dependencies: ["SwiftMockito"],
-            swiftSettings: [
-                .enableUpcomingFeature("ApproachableConcurrency"),
-            ],
-        ),
+            name: "MockitoSwiftTests",
+            dependencies: ["MockitoSwift"]
+        )
     ]
 )
