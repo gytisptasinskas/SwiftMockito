@@ -105,11 +105,16 @@ public final class MockRuntime: @unchecked Sendable {
     }
 
     private func resolve<R>(_ member: String, key: [Argument], _: R.Type) -> Resolution<R> {
-        let found: (StubRecord, Int)? = lock.withLock {
+        // User `==` runs inside `matches`, so it must not run under the lock.
+        let candidates: [StubRecord] = lock.withLock {
             calls.append(CallRecord(id: CallClock.next(), member: member, key: key, verified: false))
-            guard let stub = stubs.last(where: { $0.matches(member: member, key: key) }) else { return nil }
-            defer { stub.nextIndex += 1 }
-            return (stub, stub.nextIndex)
+            return stubs
+        }
+        let found: (StubRecord, Int)? = candidates.last(where: { $0.matches(member: member, key: key) }).map { stub in
+            lock.withLock {
+                defer { stub.nextIndex += 1 }
+                return (stub, stub.nextIndex)
+            }
         }
         guard let (stub, index) = found else {
             if R.self == Void.self { return .value(() as! R) }

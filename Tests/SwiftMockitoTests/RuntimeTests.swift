@@ -3,6 +3,15 @@ import Testing
 
 private struct Boom: Error, Equatable {}
 
+/// Its `==` re-enters the runtime, which deadlocks if keys are compared under the runtime lock.
+private struct Reentrant: Equatable {
+    let runtime: MockRuntime
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        _ = lhs.runtime.callsSnapshot()
+        return true
+    }
+}
+
 @Suite struct RuntimeTests {
     let mock = Harness()
     var runtime: MockRuntime { mock.runtime }
@@ -98,6 +107,16 @@ private struct Boom: Error, Equatable {}
         let done: (String) -> Void = { box.append($0) }
         runtime.invoke("run(id:done:)", key: [arg("1")], args: "1", done) as Void
         #expect(box.messages == ["1"])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func equalityThatReentersTheRuntimeDoesNotDeadlock() {
+        stub(runtime, "lookup(_:)", key: [arg(Reentrant(runtime: runtime))],
+             argumentTypes: Reentrant.self, returning: String.self)
+            .thenReturn("found")
+        let value: String = runtime.invoke("lookup(_:)", key: [arg(Reentrant(runtime: runtime))],
+                                           args: Reentrant(runtime: runtime))
+        #expect(value == "found")
     }
 
     @Test func missingStubOnThrowingMemberThrowsDiagnostic() {
