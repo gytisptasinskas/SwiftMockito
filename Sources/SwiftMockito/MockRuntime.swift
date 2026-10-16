@@ -1,180 +1,197 @@
 import Foundation
 
-/// Thread-safe exact stubbing and interaction storage for one mock.
+/// Lock-protected stubs and call history for one mock instance.
 public final class MockRuntime: @unchecked Sendable {
+    public let mockName: String
+    public let site: CallSite
+
     private let lock = NSLock()
-    private var stubEntries: [StubEntry] = []
-    private var interactions: [RecordedInteraction] = []
+    private var stubs: [StubRecord] = []
+    private var calls: [CallRecord] = []
 
-    public init() {}
-
-    /// Recorded dispatches in insertion order.
-    public var recordedInvocations: [Invocation] {
-        withLock { interactions.map(\.invocation) }
+    init(mockName: String, site: CallSite) {
+        self.mockName = mockName
+        self.site = site
     }
 
-    /// Begins an exact stub configuration. The response is installed when a
-    /// `thenReturn`, `thenThrow`, or `thenAnswer` method is called.
-    public func stub(for invocation: Invocation, arguments: ExactArguments) -> Stub {
-        Stub { [self] response in
-            withLock {
-                stubEntries.append(StubEntry(invocation: invocation, arguments: arguments, response: response))
-            }
-        }
-    }
+    // MARK: Dispatch used by generated code
 
-    /// Records a dispatch without resolving a response.
-    public func record(_ invocation: Invocation, arguments: ExactArguments? = nil) {
-        withLock {
-            appendInteraction(invocation, arguments: arguments)
-        }
-    }
-
-    /// Records and resolves a normal dispatch using the newest exact stub.
-    /// Unmatched `Void` members succeed; unmatched values throw
-    /// `MissingStubError`.
-    public func resolve<Value>(_ invocation: Invocation, arguments: ExactArguments?) throws -> Value {
-        let stubs = withLock { () -> [StubEntry] in
-            appendInteraction(invocation, arguments: arguments)
-            return stubEntries
-        }
-        let response = arguments.flatMap { actualArguments in
-            stubs.last(where: { $0.matches(invocation, arguments: actualArguments) })?.response
-        }
-
-        guard let response else {
-            if Value.self == Void.self {
-                return () as! Value
-            }
-            throw MissingStubError(invocation: invocation)
-        }
-
-        let value: Any
-        switch response {
-        case .value(let configuredValue):
-            value = configuredValue
-        case .failure(let error):
-            throw error
+    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) -> R {
+        switch resolve(member, key: key, R.self) {
+        case .value(let value):
+            return value
         case .answer(let answer):
-            value = try answer(ExactArguments.values(from: arguments))
+            guard let sync = answer.sync else { trap("\(qualified(member)) is synchronous but has an async answer.") }
+            do { return try sync((repeat each args)) as! R } catch { trapUnexpected(error, member) }
+        case .error(let error):
+            trapUnexpected(error, member)
+        case .missing(let missing):
+            Reporter.trap(missing.description, at: site)
         }
-
-        guard let typedValue = value as? Value else {
-            throw StubResponseTypeMismatchError(
-                member: invocation.member,
-                expectedType: String(reflecting: Value.self),
-                actualType: String(reflecting: type(of: value))
-            )
-        }
-        return typedValue
     }
 
-    func interactionSnapshot(for mockID: UUID? = nil) -> [RecordedInteraction] {
-        withLock {
-            guard let mockID else {
-                return interactions
+    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) async -> R {
+        switch resolve(member, key: key, R.self) {
+        case .value(let value):
+            return value
+        case .answer(let answer):
+            do { return try await run(answer, (repeat each args)) } catch { trapUnexpected(error, member) }
+        case .error(let error):
+            trapUnexpected(error, member)
+        case .missing(let missing):
+            Reporter.trap(missing.description, at: site)
+        }
+    }
+
+    public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) throws -> R {
+        switch resolve(member, key: key, R.self) {
+        case .value(let value):
+            return value
+        case .answer(let answer):
+            guard let sync = answer.sync else { trap("\(qualified(member)) is synchronous but has an async answer.") }
+            return try sync((repeat each args)) as! R
+        case .error(let error):
+            throw error
+        case .missing(let missing):
+            throw missing
+        }
+    }
+
+    public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) async throws -> R {
+        switch resolve(member, key: key, R.self) {
+        case .value(let value): return value
+        case .answer(let answer): return try await run(answer, (repeat each args))
+        case .error(let error): throw error
+        case .missing(let missing): throw missing
+        }
+    }
+
+    // MARK: Storage used by stubbing and verification
+
+    func install(_ stub: StubRecord) {
+        lock.withLock { stubs.append(stub) }
+    }
+
+    func callsSnapshot() -> [CallRecord] {
+        lock.withLock { calls }
+    }
+
+    func stubsSnapshot(member: String) -> [StubRecord] {
+        lock.withLock { stubs.filter { $0.member == member } }
+    }
+
+    func markVerified(_ ids: Set<Int>) {
+        lock.withLock {
+            for index in calls.indices where ids.contains(calls[index].id) {
+                calls[index].verified = true
             }
-            return interactions.filter { $0.invocation.mockID == mockID }
         }
     }
 
-    /// Removes configured stubs and recorded interactions, as `reset(_:)` requires.
-    public func reset() {
-        withLock {
-            stubEntries.removeAll()
-            interactions.removeAll()
+    func reset() {
+        lock.withLock {
+            stubs.removeAll()
+            calls.removeAll()
         }
     }
 
-    /// Identifiers of recorded interactions whose signature and arguments match
-    /// `invocation`/`arguments`. When `unverifiedOnly` is `true`, already-verified
-    /// interactions are excluded — used by `verify`, which only counts calls that have not
-    /// yet been consumed. `verifyNever` passes `false` because it must detect a matching
-    /// call regardless of whether something else already verified it.
-    func matchingInteractionIDs(invocation: Invocation, arguments: ExactArguments?, unverifiedOnly: Bool) -> [UUID] {
-        withLock {
-            interactions.filter { candidate in
-                guard candidate.matchesSignature(of: invocation), candidate.matchesArguments(arguments) else {
-                    return false
-                }
-                return unverifiedOnly ? !candidate.verified : true
-            }.map(\.id)
+    // MARK: Resolution
+
+    private enum Resolution<R> {
+        case value(R)
+        case answer(StoredAnswer)
+        case error(any Error)
+        case missing(MissingStubError)
+    }
+
+    private func resolve<R>(_ member: String, key: [Argument], _: R.Type) -> Resolution<R> {
+        let found: (StubRecord, Int)? = lock.withLock {
+            calls.append(CallRecord(id: CallClock.next(), member: member, key: key, verified: false))
+            guard let stub = stubs.last(where: { $0.matches(member: member, key: key) }) else { return nil }
+            defer { stub.nextIndex += 1 }
+            return (stub, stub.nextIndex)
+        }
+        guard let (stub, index) = found else {
+            if R.self == Void.self { return .value(() as! R) }
+            return .missing(missingStubError(member, key: key))
+        }
+        switch stub.response {
+        case .values(let values): return .value(values[min(index, values.count - 1)] as! R)
+        case .error(let error): return .error(error)
+        case .answer(let answer): return .answer(answer)
         }
     }
 
-    /// Marks the given recorded interactions as verified (consumed).
-    func markVerified(_ ids: Set<UUID>) {
-        withLock {
-            for index in interactions.indices where ids.contains(interactions[index].id) {
-                interactions[index].verified = true
-            }
-        }
+    private func run<R>(_ answer: StoredAnswer, _ packed: Any) async throws -> R {
+        if let async = answer.async { return try await async(packed) as! R }
+        return try answer.sync!(packed) as! R
     }
 
-    /// Finds the first unverified interaction at or after `startIndex` whose signature and
-    /// arguments match, marks it verified, and returns its index — or `nil` if none match.
-    /// Used by `verifyInOrder` to check relative order while allowing unrelated calls
-    /// in between: the returned index becomes the next call's search starting point.
-    func consumeNextMatchingInteraction(after startIndex: Int, invocation: Invocation, arguments: ExactArguments?) -> Int? {
-        withLock {
-            guard startIndex < interactions.count else {
-                return nil
-            }
-            guard let foundIndex = interactions[startIndex...].firstIndex(where: { candidate in
-                !candidate.verified && candidate.matchesSignature(of: invocation) && candidate.matchesArguments(arguments)
-            }) else {
-                return nil
-            }
-            interactions[foundIndex].verified = true
-            return foundIndex
-        }
-    }
-
-    private func appendInteraction(_ invocation: Invocation, arguments: ExactArguments?) {
-        interactions.append(
-            RecordedInteraction(
-                invocation: invocation,
-                arguments: arguments
-            )
+    private func missingStubError(_ member: String, key: [Argument]) -> MissingStubError {
+        MissingStubError(
+            mock: mockName,
+            member: member,
+            arguments: key.map(\.description),
+            configuredStubs: stubsSnapshot(member: member).map { stub in
+                "(\(stub.key.map(\.description).joined(separator: ", "))) at \(stub.site)"
+            },
+            site: site
         )
     }
 
-    private func withLock<Value>(_ operation: () throws -> Value) rethrows -> Value {
-        lock.lock()
-        defer { lock.unlock() }
-        return try operation()
+    private func qualified(_ member: String) -> String { "\(mockName).\(member)" }
+
+    private func trap(_ message: String) -> Never { Reporter.trap(message, at: site) }
+
+    private func trapUnexpected(_ error: any Error, _ member: String) -> Never {
+        trap("\(qualified(member)) cannot throw, but its stub produced \(error).")
     }
 }
 
-struct RecordedInteraction {
-    let id = UUID()
-    let invocation: Invocation
-    let arguments: ExactArguments?
-    var verified = false
+/// Process-wide call order, so `verifyInOrder` can order calls across mocks.
+enum CallClock {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var value = 0
 
-    func matchesSignature(of other: Invocation) -> Bool {
-        invocation.mockID == other.mockID
-            && invocation.member == other.member
-            && invocation.argumentLabels == other.argumentLabels
-    }
-
-    func matchesArguments(_ other: ExactArguments?) -> Bool {
-        guard let arguments, let other else {
-            return false
+    static func next() -> Int {
+        lock.withLock {
+            defer { value += 1 }
+            return value
         }
-        return arguments == other
     }
 }
 
-private struct StubEntry {
-    let invocation: Invocation
-    let arguments: ExactArguments
-    let response: StubResponse
+struct CallRecord {
+    let id: Int
+    let member: String
+    let key: [Argument]
+    var verified: Bool
 
-    func matches(_ actual: Invocation, arguments actualArguments: ExactArguments) -> Bool {
-        invocation.mockID == actual.mockID
-            && invocation.member == actual.member
-            && invocation.argumentLabels == actual.argumentLabels
-            && arguments == actualArguments
+    func matches(member: String, key: [Argument]) -> Bool {
+        self.member == member && keysMatch(self.key, key)
     }
+}
+
+final class StubRecord: @unchecked Sendable {
+    let member: String
+    let key: [Argument]
+    let site: CallSite
+    let response: StoredResponse
+    /// Guarded by the owning runtime's lock.
+    var nextIndex = 0
+
+    init(target: StubTarget, response: StoredResponse) {
+        member = target.member
+        key = target.key
+        site = target.site
+        self.response = response
+    }
+
+    func matches(member: String, key: [Argument]) -> Bool {
+        self.member == member && keysMatch(self.key, key)
+    }
+}
+
+func keysMatch(_ lhs: [Argument], _ rhs: [Argument]) -> Bool {
+    lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0.matches($1) }
 }

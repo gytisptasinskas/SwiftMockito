@@ -1,3 +1,5 @@
+// Replaced in Task 8.
+#if false
 import Foundation
 import Testing
 import XCTest
@@ -407,3 +409,5 @@ enum FailureReporting {
         }
     }
 }
+
+#endif

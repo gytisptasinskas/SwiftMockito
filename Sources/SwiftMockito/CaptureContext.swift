@@ -1,3 +1,5 @@
+// Replaced in Task 8.
+#if false
 import Foundation
 
 /// Task-local capture mode toggled by `when`, `verify`, and `verifyInOrder` while they
@@ -48,3 +50,5 @@ struct CapturedCall {
     let arguments: ExactArguments?
     let runtime: MockRuntime
 }
+
+#endif

@@ -1,3 +1,5 @@
+// Replaced in Task 8.
+#if false
 import Foundation
 import XCTest
 @testable import SwiftMockito
@@ -310,3 +312,5 @@ final class VerificationTests: XCTestCase {
         XCTAssertFalse(verification.called(1))
     }
 }
+
+#endif

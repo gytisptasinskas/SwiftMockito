@@ -1,19 +1,23 @@
 import Foundation
 
-/// Reports an unmatched non-`Void` mock invocation.
-public struct MissingStubError: Error, Sendable, Equatable, CustomStringConvertible, LocalizedError {
-    public let invocation: Invocation
-
-    public init(invocation: Invocation) {
-        self.invocation = invocation
-    }
+/// A throwing member was called with arguments that no stub matches.
+public struct MissingStubError: Error, Sendable, CustomStringConvertible {
+    public let mock: String
+    public let member: String
+    public let arguments: [String]
+    public let configuredStubs: [String]
+    public let site: CallSite
 
     public var description: String {
-        "Missing stub for \(invocation.member) at \(invocation.sourceLocation.fileID):\(invocation.sourceLocation.line)."
-    }
-
-    public var errorDescription: String? {
-        description
+        var lines = ["No stub for \(mock).\(member) with arguments (\(arguments.joined(separator: ", ")))."]
+        if configuredStubs.isEmpty {
+            lines.append("No stubs configured for \(member).")
+        } else {
+            lines.append("Configured stubs for \(member):")
+            lines += configuredStubs.map { "  \($0)" }
+        }
+        lines.append("Mock created at \(site).")
+        return lines.joined(separator: "\n")
     }
 }
 
