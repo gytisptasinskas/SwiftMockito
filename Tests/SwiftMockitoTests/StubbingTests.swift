@@ -22,7 +22,7 @@ final class StubbingTests: XCTestCase {
         XCTAssertThrowsError(try ExactArguments([NonEquatableValue()], for: call)) { error in
             let unsupported = error as? UnsupportedExactMatchingError
             XCTAssertEqual(unsupported?.member, "fetch(id:)")
-            XCTAssertEqual(unsupported?.argumentIndex, 0)
+            XCTAssertEqual(unsupported?.position, 0)
         }
     }
 

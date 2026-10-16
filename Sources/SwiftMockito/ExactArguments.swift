@@ -13,8 +13,8 @@ public struct ExactArguments: @unchecked Sendable, Equatable {
             guard let equatableValue = value as? any Equatable else {
                 throw UnsupportedExactMatchingError(
                     member: invocation.member,
-                    argumentIndex: index,
-                    argumentType: String(reflecting: type(of: value))
+                    position: index,
+                    typeName: String(reflecting: type(of: value))
                 )
             }
 
@@ -56,25 +56,4 @@ private struct EquatableValue: @unchecked Sendable {
 
 private func makeEquatableValue<Value: Equatable>(_ value: Value) -> EquatableValue {
     EquatableValue(value)
-}
-
-/// Describes an argument type that cannot participate in exact configuration.
-public struct UnsupportedExactMatchingError: Error, Sendable, Equatable, CustomStringConvertible, LocalizedError {
-    public let member: String
-    public let argumentIndex: Int
-    public let argumentType: String
-
-    public init(member: String, argumentIndex: Int, argumentType: String) {
-        self.member = member
-        self.argumentIndex = argumentIndex
-        self.argumentType = argumentType
-    }
-
-    public var description: String {
-        "Cannot configure \(member) with argument \(argumentIndex) of non-Equatable type \(argumentType)."
-    }
-
-    public var errorDescription: String? {
-        description
-    }
 }
