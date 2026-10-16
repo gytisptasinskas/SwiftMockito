@@ -78,6 +78,58 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
+    /// Removes configured stubs and recorded interactions, as `reset(_:)` requires.
+    public func reset() {
+        withLock {
+            stubEntries.removeAll()
+            interactions.removeAll()
+        }
+    }
+
+    /// Identifiers of recorded interactions whose signature and arguments match
+    /// `invocation`/`arguments`. When `unverifiedOnly` is `true`, already-verified
+    /// interactions are excluded — used by `verify`, which only counts calls that have not
+    /// yet been consumed. `verifyNever` passes `false` because it must detect a matching
+    /// call regardless of whether something else already verified it.
+    func matchingInteractionIDs(invocation: Invocation, arguments: ExactArguments?, unverifiedOnly: Bool) -> [UUID] {
+        withLock {
+            interactions.filter { candidate in
+                guard candidate.matchesSignature(of: invocation), candidate.matchesArguments(arguments) else {
+                    return false
+                }
+                return unverifiedOnly ? !candidate.verified : true
+            }.map(\.id)
+        }
+    }
+
+    /// Marks the given recorded interactions as verified (consumed).
+    func markVerified(_ ids: Set<UUID>) {
+        withLock {
+            for index in interactions.indices where ids.contains(interactions[index].id) {
+                interactions[index].verified = true
+            }
+        }
+    }
+
+    /// Finds the first unverified interaction at or after `startIndex` whose signature and
+    /// arguments match, marks it verified, and returns its index — or `nil` if none match.
+    /// Used by `verifyInOrder` to check relative order while allowing unrelated calls
+    /// in between: the returned index becomes the next call's search starting point.
+    func consumeNextMatchingInteraction(after startIndex: Int, invocation: Invocation, arguments: ExactArguments?) -> Int? {
+        withLock {
+            guard startIndex < interactions.count else {
+                return nil
+            }
+            guard let foundIndex = interactions[startIndex...].firstIndex(where: { candidate in
+                !candidate.verified && candidate.matchesSignature(of: invocation) && candidate.matchesArguments(arguments)
+            }) else {
+                return nil
+            }
+            interactions[foundIndex].verified = true
+            return foundIndex
+        }
+    }
+
     private func appendInteraction(_ invocation: Invocation, arguments: ExactArguments?) {
         interactions.append(
             RecordedInteraction(
@@ -95,8 +147,23 @@ public final class MockRuntime: @unchecked Sendable {
 }
 
 struct RecordedInteraction {
+    let id = UUID()
     let invocation: Invocation
     let arguments: ExactArguments?
+    var verified = false
+
+    func matchesSignature(of other: Invocation) -> Bool {
+        invocation.mockID == other.mockID
+            && invocation.member == other.member
+            && invocation.argumentLabels == other.argumentLabels
+    }
+
+    func matchesArguments(_ other: ExactArguments?) -> Bool {
+        guard let arguments, let other else {
+            return false
+        }
+        return arguments == other
+    }
 }
 
 private struct StubEntry {
