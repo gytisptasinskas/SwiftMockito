@@ -51,3 +51,31 @@ Runtime tests are run with the `when` closure overload in **variant 1** (see D1x
 - **Why `d1SyncWhenOnMainActor` fails, and a likely fix.** Diagnostics (not part of the brief): inside a `@MainActor` test, `when { try await client.fetch(id:) }` leaves `completed=false, members=[]`, because the closure inherits MainActor isolation and awaiting the nonisolated async `fetch` hops to the global executor, so `Task.immediate` returns before the mock records. A sync closure in the same MainActor async test completed fine (`completed=true`, `members=["save(_:)"]`). Marking the mock's async member `nonisolated(nonsending) public func fetch(id:) async throws -> User` made `d1SyncWhenOnMainActor` pass (`completed=true`, `members=["fetch(id:)"]`), as well as all other d1 tests, with `D1-yield completed=false` unchanged. So async mock members probably need to be `nonisolated(nonsending)` for the sync-`when` design to work from MainActor; this was only tried on `ProbeClient.fetch`, with the protocol requirement unchanged.
 - `when { client.cached(id: "42") }.thenThrow(...)` compiling is an inference artifact: standalone, the closure overload infers `E = Never` (`Stub<User?, Never>`); with a chained `thenThrow` member (which needs `Failure == any Error`) the solver infers `any Error`. A non-throwing closure is therefore not protected by the type system when `.thenThrow` is chained. The autoclosure form `when(client.cached(id:)).thenThrow(...)` is rejected.
 - D5 exploration (not part of the brief): an async-builder alternative (`static func buildExpression<T>(_ e: @autoclosure () async throws -> T) async` with an `async` builder closure) compiles, but then every line at the call site needs `await` (`error: expression is 'async' but is not marked with 'await'`), which defeats the no-`await` goal. It is not a drop-in fix.
+
+## Follow-up probes (Task 4b)
+
+Setup: every async member of `ProbeClient` is `nonisolated(nonsending)` (`fetch`, new `refresh(id:) async -> Int`, which returns `7` outside capture and `0` in capture). `Client` also gained `func decode<T>(_ type: T.Type) throws -> T` (always records and throws `CaptureSignal`). The `when` overload is still variant 1. All 4b tests (and the 4 Task 4 `d1*` tests plus `XCTestCaptureProbe`) were run in a single `swift test`: 19 Swift Testing tests in 2 suites passed, `XCTestCaptureProbe.testWhenCapturingSelf` passed, `D1-yield completed=false` unchanged. Both of the Task 4 FAIL probes (`D1-throw-on-nonthrowing-closure`, `D2-unannotated-answer`) still fail identically, as expected. `run-probes.sh` was changed only to pass `-warnings-as-errors` for `A6-*` files.
+
+| Probe | Result | Notes / compiler output |
+|---|---|---|
+| Task 4 `d1SyncWhenInAsyncTest`, `d1SyncWhenInSyncTest`, `d1SetterClosureAndAutoclosure`, `d1SuspendingClosureIsDetected` | PASS | `D1-yield completed=false` |
+| Task 4 `d1SyncWhenOnMainActor` | PASS | was FAIL before the `nonisolated(nonsending)` change |
+| `XCTestCaptureProbe.testWhenCapturingSelf` | PASS | |
+| test `a1MainActorAsyncNonThrowing` | PASS | `when { await client.refresh(id: "1") }` completed, members `["refresh(id:)"]` |
+| test `a2RealCallFromMainActor` | PASS | real call returns 7 |
+| test `a3RealCallFromDetachedTask` | PASS | `Task.detached` real call returns 7 |
+| test `a4MainActorProtocolAsyncMember` (`@MainActor` test) | PASS | observed `A4-MainActor completed=true members=["load()"]` |
+| test `a4NonisolatedAsyncTest` (nonisolated async test) | PASS (observation only) | observed `A4-nonisolated completed=false members=[]` (hops to MainActor, as expected). Only warning: `no 'async' operations occur within 'await' expression` on `await ProbeLoader()` (init is not async). |
+| `probes/A5-witness-nonsending.swift` | PASS | |
+| `probes/A6-restated-sendable.swift` (with `-warnings-as-errors`) | PASS | compiles with no warning. Negative control (same file without `, @unchecked Sendable`): `error: class 'MockC' must restate inherited '@unchecked Sendable' conformance` (`logs/4b-a6-control.log`). |
+| test `b1AsyncOverloadRecordsEveryLine` | PASS | 4 members, `signalled == false` |
+| test `b2SyncOverloadRecordsEveryLine` | PASS | members `["cached(id:)","save(_:)","cached(id:)"]`, completed |
+| test `b3MainActorSyncOverload` | PASS | completed, all 4 members, including `try await client.fetch` |
+| test `b4GenericWithoutDummySignals` | PASS | `signalled == true`, members `["decode(_:)"]` |
+| `probes/B5-overload-pick.swift` | PASS | both `await inOrderV2 {…}` and `inOrderV2 {…}` resolve, no ambiguity |
+| test `b6WhenStillThrows` | PASS | `when { try await client.fetch }` still records `["fetch(id:)"]`, completed |
+
+## Amended decisions
+- D1-amended: Primary. All d1 tests including `d1SyncWhenOnMainActor`, `XCTestCaptureProbe`, a1-a3, a4 on MainActor (`completed=true`), A5 and A6 pass with `nonisolated(nonsending)` on async members. Caveat: from a nonisolated async test, a `@MainActor` mock's async member suspends (`completed=false`), so such a mock cannot be stubbed with the sync `when` outside MainActor. The Task 4 D1-throw-on-nonthrowing-closure FAIL (thenThrow on a non-throwing closure compiles) is unaffected by this amendment.
+- D5-amended: Primary. b1-b4, B5 and b6 all pass: throwing members return placeholders inside `inOrderV2`, both the sync and async overloads record every line, a member with no dummy (`decode`) is detected via `signalled`, and `when` still throws.
+- A6 restated Sendable: required. Without `@unchecked Sendable` on the `Mock` subclass the compiler warns (an error under `-warnings-as-errors`); restating it compiles cleanly.
