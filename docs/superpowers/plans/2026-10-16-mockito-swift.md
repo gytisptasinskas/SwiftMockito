@@ -2231,6 +2231,13 @@ import Testing
     let mock = SampleMock()
     let other = SampleMock()
 
+    init() {
+        // Unstubbed non-Void members trap (spec), so stub every `cached(id:)` the tests call.
+        for m in [mock, other] {
+            for id in ["1", "2", "4", "noise"] { when(m.cached(id: id)).thenReturn(nil) }
+        }
+    }
+
     func failures(_ body: () -> Void) -> [String] {
         let box = MessageBox()
         Reporter.$sink.withValue({ message, _ in box.append(message) }, operation: body)
