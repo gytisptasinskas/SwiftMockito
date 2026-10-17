@@ -319,14 +319,23 @@ final class DummySynthesizer {
         return arguments
     }
 
-    /// Any private or fileprivate stored property, with or without a default, hides the memberwise
-    /// initializer. `private(set)` only restricts the setter and does not count.
+    /// A private or fileprivate stored property with no value makes the memberwise initializer private.
+    /// One with a default (an optional `var` defaults to nil) only drops out of its parameters.
+    /// `private(set)` only restricts the setter and does not count.
     private func hasInaccessibleStoredProperty(_ declaration: DeclSyntax) -> Bool {
-        guard let variable = declaration.as(VariableDeclSyntax.self),
-              !variable.modifiers.contains(where: { $0.name.text == "static" }),
-              variable.modifiers.contains(where: { ["private", "fileprivate"].contains($0.name.text) && $0.detail == nil })
-        else { return false }
-        return variable.bindings.contains { isStored($0) }
+        guard let variable = declaration.as(VariableDeclSyntax.self), isHidden(variable) else { return false }
+        return variable.bindings.contains { binding in
+            guard isStored(binding), binding.initializer == nil else { return false }
+            let isOptionalVar = variable.bindingSpecifier.text == "var"
+                && binding.typeAnnotation?.type.is(OptionalTypeSyntax.self) == true
+            return !isOptionalVar
+        }
+    }
+
+    /// A non-static property whose getter is private or fileprivate.
+    private func isHidden(_ variable: VariableDeclSyntax) -> Bool {
+        !variable.modifiers.contains(where: { $0.name.text == "static" })
+            && variable.modifiers.contains(where: { ["private", "fileprivate"].contains($0.name.text) && $0.detail == nil })
     }
 
     /// A binding with no getter: observers (`willSet`, `didSet`) keep a property stored.
@@ -401,7 +410,7 @@ final class DummySynthesizer {
     func storedProperties(_ decl: StructDeclSyntax) -> [(name: String, type: String)] {
         var result: [(name: String, type: String)] = []
         for variable in decl.memberBlock.members.compactMap({ $0.decl.as(VariableDeclSyntax.self) })
-        where !variable.modifiers.contains(where: { $0.name.text == "static" }) {
+        where !variable.modifiers.contains(where: { $0.name.text == "static" }) && !isHidden(variable) {
             var nextType: String?
             var entries: [(name: String, type: String)] = []
             for binding in variable.bindings.reversed() {
