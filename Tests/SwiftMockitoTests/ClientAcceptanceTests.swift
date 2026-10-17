@@ -1,7 +1,7 @@
 import Testing
 @testable import SwiftMockito
 
-@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Edge.self, Store.self, Shapes.self)
+@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Edge.self, Store.self, Shapes.self, Escapes.self)
 enum Mocks {}
 
 @Suite struct ClientAcceptanceTests {

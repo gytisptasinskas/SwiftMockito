@@ -17,7 +17,7 @@ struct ProtocolResolver {
         "repeat", "break", "continue", "fallthrough", "guard", "defer", "static", "public", "private",
         "internal", "fileprivate", "open", "inout", "Any", "associatedtype", "typealias", "catch", "rethrows",
         "throws",
-        "runtime", "capture", "placeholder", "newValue", "arg",
+        "runtime", "capture", "placeholder", "newValue", "arg", "dispatch", "isolation",
     ]
 
     func resolve(_ marker: Marker, testModule: String) -> Result<MockModel, GeneratorFailure> {
@@ -232,27 +232,26 @@ struct ProtocolResolver {
                 type: p.type.trimmedDescription,
                 isClosure: isClosure(resolved),
                 isMetatype: resolved.is(MetatypeTypeSyntax.self),
+                isNonEscapingClosure: p.ellipsis == nil && isNonEscapingClosure(p.type),
                 isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1,
                 isVariadic: p.ellipsis != nil
             )
         }
     }
 
-    /// An error for the first parameter that is a non-escaping closure or names an ambiguous typealias.
+    /// An error for the first parameter whose type names an ambiguous typealias. Non-escaping closure
+    /// parameters are supported: the emitter lends them through `withoutActuallyEscaping`.
     private func checkParameterTypes(_ list: FunctionParameterListSyntax, member: String, marker: Marker) -> GeneratorDiagnostic? {
         for p in list {
             if let ambiguity = ambiguousTypealias(in: p.type) {
                 return .error("\(member): \(ambiguity)", at: marker)
-            }
-            if isNonEscapingClosure(p.type) {
-                return .error("\(member): non-escaping closure parameter '\(p.secondName?.text ?? p.firstName.text)' is not supported; mark it @escaping", at: marker)
             }
         }
         return nil
     }
 
     /// True when the parameter's type is a function type that is not `@escaping`.
-    /// Optionals are implicitly escaping, so `(() -> Void)?` is fine.
+    /// Optionals are implicitly escaping, so `(() -> Void)?` is not.
     private func isNonEscapingClosure(_ type: TypeSyntax) -> Bool {
         var current = type
         for _ in 0..<8 {

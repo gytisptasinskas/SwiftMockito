@@ -114,18 +114,29 @@ func methods(_ model: MockModel) -> [Method] {
         #expect(find.map(\.name) == ["arg0", "arg1", "arg2", "value"])
     }
 
-    @Test func nonEscapingClosureParameterIsAnError() {
-        guard case .failure(let failure) = resolve("protocol Client { func run(_ body: () -> Void) }") else {
-            Issue.record("expected failure"); return
-        }
-        #expect(failure.diagnostics.map(\.message) == ["Client.run: non-escaping closure parameter 'body' is not supported; mark it @escaping"])
+    @Test func nonEscapingClosureParametersAreMarked() throws {
+        let model = try resolve("""
+            typealias Done = () -> Void
+            protocol Client {
+                func run(_ body: () -> Void, done: Done, log: @autoclosure () -> String, handlers: () -> Void...)
+                subscript(transform: (Int) -> Int) -> Int { get }
+            }
+            """).get()
+        #expect(methods(model)[0].parameters.map(\.isNonEscapingClosure) == [true, true, true, false])
+        guard case .subscriptMember(let s) = model.members[1] else { Issue.record("subscript"); return }
+        #expect(s.parameters.map(\.isNonEscapingClosure) == [true])
     }
 
-    @Test func nonEscapingClosureThroughTypealiasIsAnError() {
-        guard case .failure(let failure) = resolve("typealias Done = () -> Void\nprotocol Client { func run(done: Done) }") else {
+    @Test func rethrowsWithNonEscapingClosureIsStillAnError() {
+        guard case .failure(let failure) = resolve("protocol Client { func run(_ body: () throws -> Void) rethrows }") else {
             Issue.record("expected failure"); return
         }
-        #expect(failure.diagnostics.map(\.message) == ["Client.run: non-escaping closure parameter 'done' is not supported; mark it @escaping"])
+        #expect(failure.diagnostics.map(\.message) == ["Client.run: rethrows is not supported"])
+    }
+
+    @Test func helperNamesAreRenamedInGeneratedBodies() throws {
+        let model = try resolve("protocol Client { func run(dispatch: Int, isolation: Int) }").get()
+        #expect(methods(model)[0].parameters.map(\.name) == ["arg0", "arg1"])
     }
 
     @Test func escapingOptionalAndAliasedClosuresAreAccepted() throws {
@@ -139,6 +150,7 @@ func methods(_ model: MockModel) -> [Method] {
             }
             """).get()
         #expect(methods(model).count == 4)
+        #expect(methods(model).allSatisfy { !$0.parameters[0].isNonEscapingClosure })
     }
 
     @Test func actorProtocolIsUnsupported() {
@@ -307,11 +319,10 @@ func methods(_ model: MockModel) -> [Method] {
         #expect(SourceIndex([file]).markers(in: ["/m"]).map(\.protocolName) == ["Client"])
     }
 
-    @Test func nonEscapingClosureInASubscriptIsAnError() {
-        guard case .failure(let failure) = resolve("typealias Done = () -> Void\nprotocol Client { subscript(key: Int, done: Done) -> Int { get } }") else {
-            Issue.record("expected failure"); return
-        }
-        #expect(failure.diagnostics.map(\.message) == ["Client.subscript: non-escaping closure parameter 'done' is not supported; mark it @escaping"])
+    @Test func nonEscapingClosureInASubscriptIsSupported() throws {
+        let model = try resolve("typealias Done = () -> Void\nprotocol Client { subscript(key: Int, done: Done) -> Int { get } }").get()
+        guard case .subscriptMember(let s) = model.members[0] else { Issue.record("subscript"); return }
+        #expect(s.parameters.map(\.isNonEscapingClosure) == [false, true])
     }
 
     @Test func escapingAndOptionalClosuresInASubscriptAreAccepted() throws {
