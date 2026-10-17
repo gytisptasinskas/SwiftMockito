@@ -37,3 +37,18 @@ public struct UnsupportedExactMatchingError: Error, Sendable, CustomStringConver
         "\(member) argument \(position) has type \(typeName), which is neither Equatable nor a class; exact matching cannot compare it."
     }
 }
+
+/// Recording a non-throwing member needed a placeholder value that SwiftMockito cannot build.
+public struct MissingDummyError: Error, Sendable, CustomStringConvertible {
+    public let typeName: String
+    public let member: String
+
+    public init(typeName: String, member: String) {
+        self.typeName = typeName
+        self.member = member
+    }
+
+    public var description: String {
+        "No dummy value for \(typeName), needed while recording \(member). Call provideDummy(_:) with a \(typeName) value before stubbing or verifying this member."
+    }
+}
