@@ -5135,6 +5135,14 @@ Write these sections. Take every snippet from the acceptance tests and copy it r
 7. Unstubbed calls: a throwing member throws `MissingStubError`. A non-throwing member with a return value reports the failure **and then traps, which ends the whole test process**. A `Void` member is recorded and returns.
 8. Dummies and `provideDummy`, including an example of the build warning.
 9. Not supported: the spec's non-goals list.
+10. Known limitations, all decided during implementation (see the SDD ledger):
+    - `when`/`verify`/`verifyNever` must be called from a nonisolated or `@MainActor` test. From inside a custom actor they report "the expression suspended".
+    - Mocks of global-actor protocols are stubbed and verified from tests isolated to that actor.
+    - Non-escaping closure parameters are not supported. The generator reports an error at the marker; mark the parameter `@escaping`.
+    - `thenAnswer` closures with callback parameters need annotated parameter types.
+    - `provideDummy` registers by exact type: `provideDummy(Sub() as Base)` for a `Base` return.
+    - Types whose initializers are not reachable from the test module produce a build warning and need `provideDummy`.
+    - In Xcode, the first build asks you to trust the SwiftMockito macro and plugin. On CI, pass `-skipMacroValidation -skipPackagePluginValidation` to `xcodebuild`.
 
 - [ ] **Step 2: Public-API guard**
 
@@ -5187,7 +5195,7 @@ jobs:
       - name: Public API has no matchers
         run: bash Scripts/check-public-api.sh
       - name: Xcode plugin compiles
-        run: xcodebuild -scheme SwiftMockito-Package -destination 'platform=macOS' build
+        run: xcodebuild -scheme SwiftMockito-Package -destination 'platform=macOS' -skipMacroValidation -skipPackagePluginValidation build
 ```
 
 - [ ] **Step 4: Full local gate**
