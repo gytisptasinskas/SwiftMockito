@@ -19,5 +19,5 @@ jobs:
         run: bash IntegrationTests/CheckedInMocks/check.sh
       - name: Public API has no matchers
         run: bash Scripts/check-public-api.sh
-      - name: Xcode plugin compiles
+      - name: Xcode plugin conformance compiles
         run: xcodebuild -scheme SwiftMockito-Package -destination 'platform=macOS' -skipMacroValidation -skipPackagePluginValidation build

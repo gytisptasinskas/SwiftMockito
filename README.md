@@ -10,8 +10,7 @@ verify(client.cached(id: "42")).called(1)
 
 ## Requirements
 
-- Swift 6.2 or later, in Swift 6 language mode
-- macOS 26 / iOS 26 (the runtime uses `Task.immediate`)
+Requires Swift 6.2+ and macOS 26 / iOS 26 (`Task.immediate`). Tested with Swift 6.4 (Xcode 27) on macOS 27; earlier 6.x toolchains are untested. Use Swift 6 language mode.
 
 ## Installation
 
@@ -80,7 +79,9 @@ swift run SwiftMockitoGenerator generate \
 | `--marked` | A test file that contains `@GenerateMock`. Repeatable. |
 | `--source Module=path` | One source file that declares protocols or dummy types. Repeatable. |
 | `--source-dir Module=path` | Every `.swift` file under a directory. Repeatable. |
-| `--expect MockName.swift` | A file that must exist in the output. If no active marker produces it, a placeholder file is written. Repeatable. |
+| `--expect MockName.swift` | A file that must exist in the output. If no active marker produces it, a placeholder file is written. A marker that produces a file not listed is an error. Repeatable. |
+
+Exit codes: 0 on success, 1 for generation or write errors, 2 for a usage error or an unreadable input.
 
 `IntegrationTests/CheckedInMocks/check.sh` runs the generator and diffs its output against the checked-in files, which is how CI keeps them current.
 
@@ -160,7 +161,7 @@ await verifyInOrder {
 }
 ```
 
-A throwing line is recorded and the block continues. A line whose member returns a generic type cannot supply a placeholder, so register a dummy with `provideDummy` for that type first.
+A throwing line is recorded and the block continues. A throwing member with no placeholder, meaning any return type that has no built-in or synthesized dummy and not only a generic one, cannot continue the block, so register a dummy with `provideDummy` for that type first. Throwing members get no build warning for this.
 
 **`reset(client)`** clears the mock's stubs and recorded calls.
 
@@ -245,8 +246,8 @@ While `when` or `verify` records a call, a non-throwing member must return somet
 A dummy comes from, in order:
 
 1. A value you registered with `provideDummy(_:)`.
-2. A built-in: `Void`, `Bool`, integer and floating-point types, `String`, `Character`, `Optional` (`nil`), `Array`, `Dictionary`, `Set`, `Data`, `Date`, `URL`, `UUID`, `Result`, and tuples of these.
-3. A fallback the generator synthesizes from the type's source declaration: a struct from its memberwise or accessible initializer, an enum from its first case, a class from an accessible initializer, and a protocol as a stand-in whose members trap if called.
+2. A built-in: `Void`, `Bool`, integer and floating-point types, `String`, `Character`, `Optional` (`nil`), `Array`, `Dictionary`, `Set`, `Data`, `Date`, `URL`, `UUID` and `Result`.
+3. A fallback the generator synthesizes from the type's source declaration: a struct from its memberwise or accessible initializer, an enum from its first case, a class from an accessible initializer, a tuple from the dummies of its elements, and a protocol as a stand-in whose members trap if called.
 
 When the generator cannot build a dummy, it reports a build warning at the `@GenerateMock` declaration. For a protocol with `func size() -> CGSize`:
 
@@ -260,7 +261,7 @@ Register one before you stub or verify that member. The registry is process-wide
 provideDummy(CGSize(width: 1, height: 1))
 ```
 
-`provideDummy` registers by exact type. For a member that returns `Base`, register a `Base`:
+`provideDummy` registers by exact type, and the value must be `Sendable`. For a member that returns `Base`, register a `Base`; `provideDummy(Sub() as Base)` requires `Base: Sendable`:
 
 ```swift
 provideDummy(Sub() as Base)
@@ -273,14 +274,20 @@ If a non-throwing member is recorded and no dummy exists for its return type, Sw
 - Argument matchers: no `any()`, wildcards, predicates or argument captors.
 - Default stubs or "nice mock" behavior. An unstubbed call that returns a value fails.
 - Static requirements, initializers, `Self` requirements and associated types.
+- Subscripts with `async` or `throws` getters, and generic subscripts.
+- Objective-C protocols (`@objc`, or `optional` requirements).
+- Members named `runtime` or `arg`, which collide with names the generated mock uses. Parameters named `arg` are fine.
 - `Actor`-constrained protocols (`protocol P: Actor`).
 - Class mocking, and protocols available only in binary frameworks.
 - The Objective-C runtime, swizzling and reflection-based dispatch.
 
 ## Known limitations
 
-- `when`, `verify` and `verifyNever` must be called from a nonisolated or `@MainActor` test. From inside a custom actor they report that the expression suspended.
+- `when`, `verify`, `verifyNever` and the synchronous `verifyInOrder` cannot be called from inside a custom actor *instance*: they report that the expression suspended. Global actors such as `@MainActor` or a custom `@globalActor` work when the test is isolated to them.
 - Mocks of global-actor protocols are stubbed and verified from tests isolated to that actor.
+- `thenAnswer` bodies run, and `thenReturn` values are handed over, on whatever thread or actor the code under test calls the mock from. Don't touch actor-isolated test state from an answer.
+- A `when` closure must evaluate to the member's own return type. Wrapping the call in `try?`, `??` or a conversion is reported at the `when`, and no stub is installed.
+- Very large dependency graphs (thousands of source files) can exceed the command-line length limit when the plugin passes them to the generator.
 - Non-escaping closure parameters are not supported. The generator reports an error at the marker; mark the parameter `@escaping`.
 - `thenAnswer` closures with callback parameters need annotated parameter types.
 - `provideDummy` registers by exact type: use `provideDummy(Sub() as Base)` for a `Base` return.
