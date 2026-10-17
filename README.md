@@ -120,6 +120,12 @@ when(client.load(id: "42", completion: { _ in }))
 
 Pass any closure for the callback argument when you stub; closures are not part of matching.
 
+Non-escaping closure parameters, such as `func perform(_ work: () -> Void)`, work the same way. The answer annotates them `@escaping` and may call them, but must not keep them:
+
+```swift
+when(worker.perform({})).thenAnswer { (work: @escaping () -> Void) in work() }
+```
+
 Properties are stubbed by their getter, and subscripts by their arguments:
 
 ```swift
@@ -275,6 +281,7 @@ If a non-throwing member is recorded and no dummy exists for its return type, Sw
 - Default stubs or "nice mock" behavior. An unstubbed call that returns a value fails.
 - Static requirements, initializers, `Self` requirements and associated types.
 - Subscripts with `async` or `throws` getters, and generic subscripts.
+- `rethrows` members.
 - Objective-C protocols (`@objc`, or `optional` requirements).
 - Members named `runtime` or `arg`, which collide with names the generated mock uses. Parameters named `arg` are fine.
 - `Actor`-constrained protocols (`protocol P: Actor`).
@@ -288,7 +295,7 @@ If a non-throwing member is recorded and no dummy exists for its return type, Sw
 - `thenAnswer` bodies run, and `thenReturn` values are handed over, on whatever thread or actor the code under test calls the mock from. Don't touch actor-isolated test state from an answer.
 - A `when` closure must evaluate to the member's own return type. Wrapping the call in `try?`, `??` or a conversion is reported at the `when`, and no stub is installed.
 - Very large dependency graphs (thousands of source files) can exceed the command-line length limit when the plugin passes them to the generator.
-- Non-escaping closure parameters are not supported. The generator reports an error at the marker; mark the parameter `@escaping`.
+- A `thenAnswer` must not store a non-escaping closure parameter, or anything that captures it, for use after it returns. The mock lends the closure through `withoutActuallyEscaping`, so in debug builds such an answer traps with `closure argument was escaped in withoutActuallyEscaping block`, pointing at the generated mock. Optimized builds do not check, and calling the stored closure later is undefined behavior.
 - `thenAnswer` closures with callback parameters need annotated parameter types.
 - `provideDummy` registers by exact type: use `provideDummy(Sub() as Base)` for a `Base` return.
 - Types whose initializers are not reachable from the test module produce a build warning and need `provideDummy`.

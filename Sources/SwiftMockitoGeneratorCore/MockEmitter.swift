@@ -1,3 +1,5 @@
+import Foundation
+
 struct MockEmitter {
     let model: MockModel
     let synthesizer: DummySynthesizer
@@ -39,7 +41,8 @@ struct MockEmitter {
         w.block("\(model.access)\(nonsending(m.isAsync))func \(methodSignature(m))") { w in
             emitBody(identity: m.identity, key: key, args: argsList(m.parameters.map(\.name)),
                      isAsync: m.isAsync, isThrowing: m.isThrowing, returnType: m.returnType,
-                     genericNames: Set(m.genericParameters.map(\.name)), &w)
+                     genericNames: Set(m.genericParameters.map(\.name)),
+                     nonEscaping: m.parameters.filter(\.isNonEscapingClosure), &w)
         }
     }
 
@@ -68,28 +71,33 @@ struct MockEmitter {
         let params = s.parameters.map { declaration($0, subscriptStyle: true) }.joined(separator: ", ")
         let key = keyList(genericTypes: [], parameters: s.parameters)
         let names = s.parameters.map(\.name)
+        let nonEscaping = s.parameters.filter(\.isNonEscapingClosure)
         w.block("\(model.access)subscript(\(params)) -> \(s.returnType)") { w in
             guard s.hasSetter else {
                 emitBody(identity: s.identity, key: key, args: argsList(names), isAsync: false, isThrowing: false,
-                         returnType: s.returnType, genericNames: [], &w)
+                         returnType: s.returnType, genericNames: [], nonEscaping: nonEscaping, &w)
                 return
             }
             w.block("get") { w in
                 emitBody(identity: s.identity, key: key, args: argsList(names), isAsync: false, isThrowing: false,
-                         returnType: s.returnType, genericNames: [], &w)
+                         returnType: s.returnType, genericNames: [], nonEscaping: nonEscaping, &w)
             }
             w.block("set") { w in
                 let setKey = key == "[]" ? "[arg(newValue)]" : String(key.dropLast()) + ", arg(newValue)]"
                 emitBody(identity: "\(s.identity)=", key: setKey, args: argsList(names + ["newValue"]),
-                         isAsync: false, isThrowing: false, returnType: nil, genericNames: [], &w)
+                         isAsync: false, isThrowing: false, returnType: nil, genericNames: [],
+                         nonEscaping: nonEscaping, &w)
             }
         }
     }
 
     // MARK: Body
 
+    /// `nonEscaping` lists the non-escaping closure parameters. The record and dispatch calls
+    /// take escaping values, so each such call is wrapped in one `withoutActuallyEscaping` per parameter.
     private func emitBody(identity: String, key: String, args: String, isAsync: Bool, isThrowing: Bool,
-                          returnType: String?, genericNames: Set<String>, _ w: inout CodeWriter) {
+                          returnType: String?, genericNames: Set<String>, nonEscaping: [Parameter] = [],
+                          _ w: inout CodeWriter) {
         let effects: String = switch (isAsync, isThrowing) {
         case (true, true): ", effects: [.async, .throwing]"
         case (true, false): ", effects: .async"
@@ -100,7 +108,9 @@ struct MockEmitter {
         // The recorded return type lets `thenReturn`/`thenAnswer` reject a closure of another type.
         let returns = returnType.map { ", returns: \(metatype($0))" } ?? ""
         w.block("if let capture = Capture.current") { w in
-            w.line("capture.record(runtime, \"\(identity)\", key: \(key)\(args)\(effects)\(returns))")
+            withoutEscaping(nonEscaping, lead: "", prefix: "", &w) { w in
+                w.line("capture.record(runtime, \"\(identity)\", key: \(key)\(args)\(effects)\(returns))")
+            }
             if isThrowing {
                 // Resolved D5: inside verifyInOrder, return a placeholder instead of throwing.
                 if let returnType {
@@ -121,7 +131,38 @@ struct MockEmitter {
         }
         let call = isThrowing ? "invokeThrowing" : "invoke"
         let prefix = (isThrowing ? "try " : "") + (isAsync ? "await " : "")
-        w.line("return \(prefix)runtime.\(call)(\"\(identity)\", key: \(key)\(args))")
+        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args))"
+        guard !nonEscaping.isEmpty else {
+            w.line("return \(prefix)\(dispatch)")
+            return
+        }
+        guard isAsync else {
+            withoutEscaping(nonEscaping, lead: "return \(prefix)", prefix: prefix, &w) { w in w.line("\(prefix)\(dispatch)") }
+            return
+        }
+        // In a `nonisolated(nonsending)` member, an async `withoutActuallyEscaping` body is checked as
+        // if it left the caller's isolation, so the closure cannot be sent. A local function with an
+        // `isolated` parameter keeps the body on the caller's isolation.
+        let params = (nonEscaping.map { "_ \($0.name): \(withoutAutoclosure($0.type))" } + ["_ isolation: isolated (any Actor)?"])
+            .joined(separator: ", ")
+        let signature = " async" + (isThrowing ? " throws" : "") + (returnType.map { " -> \($0)" } ?? "")
+        w.block("func dispatch(\(params))\(signature)") { w in
+            withoutEscaping(nonEscaping, lead: "return \(prefix)", prefix: prefix, &w) { w in
+                w.line("_ = isolation")   // Load-bearing: isolates the closure to the parameter.
+                w.line("return \(prefix)\(dispatch)")
+            }
+        }
+        w.line("return \(prefix)dispatch(\((nonEscaping.map(\.name) + ["#isolation"]).joined(separator: ", ")))")
+    }
+
+    /// Nests `withoutActuallyEscaping(x) { x in … }` for each parameter, rebinding it to an escaping
+    /// value under the same name. The outermost wrapper starts with `lead`; inner ones with `prefix`.
+    private func withoutEscaping(_ parameters: [Parameter], lead: String, prefix: String, _ w: inout CodeWriter,
+                                 _ body: (inout CodeWriter) -> Void) {
+        guard let first = parameters.first else { return body(&w) }
+        w.block("\(lead)withoutActuallyEscaping(\(first.name))", binding: first.name) { w in
+            withoutEscaping(Array(parameters.dropFirst()), lead: prefix, prefix: prefix, &w, body)
+        }
     }
 
     // MARK: Pieces
@@ -138,6 +179,11 @@ struct MockEmitter {
             p.isMetatype ? "arg(type: \(p.name))" : "arg(\(p.name))"
         }
         return "[" + (types + values).joined(separator: ", ") + "]"
+    }
+
+    /// A helper parameter cannot forward an `@autoclosure` argument, so it takes a plain closure.
+    private func withoutAutoclosure(_ type: String) -> String {
+        type.replacingOccurrences(of: "@autoclosure ", with: "")
     }
 
     private func argsList(_ names: [String]) -> String {

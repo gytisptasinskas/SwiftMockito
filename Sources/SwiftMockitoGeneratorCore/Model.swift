@@ -27,6 +27,8 @@ struct Parameter: Equatable {
     let name: String          // internal name used in the body
     let type: String          // as written in the protocol
     let isClosure: Bool
+    /// A function type without `@escaping`: the mock wraps it in `withoutActuallyEscaping`.
+    let isNonEscapingClosure: Bool
     let isMetatype: Bool
     let isTuple: Bool
     let isVariadic: Bool

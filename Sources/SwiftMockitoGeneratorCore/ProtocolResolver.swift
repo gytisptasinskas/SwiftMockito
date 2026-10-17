@@ -17,7 +17,7 @@ struct ProtocolResolver {
         "repeat", "break", "continue", "fallthrough", "guard", "defer", "static", "public", "private",
         "internal", "fileprivate", "open", "inout", "Any", "associatedtype", "typealias", "catch", "rethrows",
         "throws",
-        "runtime", "capture", "placeholder", "newValue", "arg",
+        "runtime", "capture", "placeholder", "newValue", "arg", "dispatch", "isolation",
     ]
 
     func resolve(_ marker: Marker, testModule: String) -> Result<MockModel, GeneratorFailure> {
@@ -121,9 +121,6 @@ struct ProtocolResolver {
                 return .failure(.error("\(protocolName).\(name): rethrows is not supported", at: marker))
             }
             if Self.reservedNames.contains(name) { return collision(protocolName, name, marker) }
-            for p in function.signature.parameterClause.parameters where isNonEscapingClosure(p.type) {
-                return .failure(.error("\(protocolName).\(name): non-escaping closure parameter '\(p.secondName?.text ?? p.firstName.text)' is not supported; mark it @escaping", at: marker))
-            }
             let returnType = function.signature.returnClause?.type.trimmedDescription
             return .success(.method(Method(
                 name: name,
@@ -196,6 +193,7 @@ struct ProtocolResolver {
             name: internalName == "_" || Self.unusableParameterNames.contains(internalName) ? "arg\(position)" : internalName,
             type: type.trimmedDescription,
             isClosure: isClosure(resolved),
+            isNonEscapingClosure: !isVariadic && isNonEscapingClosure(type),
             isMetatype: resolved.is(MetatypeTypeSyntax.self),
             isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1,
             isVariadic: isVariadic
@@ -203,7 +201,7 @@ struct ProtocolResolver {
     }
 
     /// True when the parameter's type is a function type that is not `@escaping`.
-    /// Optionals are implicitly escaping, so `(() -> Void)?` is fine.
+    /// Optionals are implicitly escaping, so `(() -> Void)?` is not.
     private func isNonEscapingClosure(_ type: TypeSyntax) -> Bool {
         var current = type
         for _ in 0..<8 {
