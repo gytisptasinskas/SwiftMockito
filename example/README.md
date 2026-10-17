@@ -20,9 +20,11 @@ appTests/
 
 ## Running it
 
-1. Open `example/app.xcodeproj` in Xcode 26 or later.
+1. Open `example/app.xcodeproj` in Xcode 27 or later (the project was created with Xcode 27).
 2. Press ⌘U to run the tests, or ⌘R to run the app in an iOS 26 simulator.
 3. The first build asks you to trust the SwiftMockito macro and the SwiftMockitoPlugin build plugin. Choose **Trust & Enable** for both.
+
+⌘U launches the app to host the tests. `appApp` checks for `XCTestConfigurationFilePath` and shows nothing in that case, so a test run sends no requests.
 
 The project uses the package from the repository root (`..`) as a local package, so it always builds against the code in this checkout.
 
@@ -65,6 +67,7 @@ The `app` target itself does not depend on SwiftMockito.
 | `verifyInOrder` | `PostDetailViewModelTests.loadsAuthorThenComments` |
 | `verifyNever` | `PostDetailViewModelTests.stopsWhenAuthorFails` |
 | `thenAnswer` driving a completion handler | `PostDetailViewModelTests.likeMarksPostLiked`, `likeFailureLeavesPostUnliked` |
+| `thenAnswer` holding the callback to test a request in flight | `PostDetailViewModelTests.likeWhileLikingIsIgnored` |
 
 Every test stubs what it calls, and arguments are matched by value: `service.user(id: 7)` only matches a call with `id` 7.
 

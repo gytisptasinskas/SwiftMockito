@@ -86,4 +86,31 @@ struct PostDetailViewModelTests {
 
         verify(service.likePost(id: 1, completion: { _ in })).called(1)
     }
+
+    /// An answer can hold on to the callback and call it later, to test what happens while
+    /// a request is still in flight: a second tap then doesn't send another request.
+    @Test(.timeLimit(.minutes(1))) func likeWhileLikingIsIgnored() async {
+        let pending = PendingCompletion()
+        when(service.likePost(id: 1, completion: { _ in }))
+            .thenAnswer { (id: Int, completion: @escaping @Sendable (Result<Void, any Error>) -> Void) in
+                if pending.completion == nil {
+                    pending.completion = completion
+                } else {
+                    completion(.success(()))
+                }
+            }
+
+        let firstTap = Task.immediate { @MainActor in await viewModel.like() }
+        await viewModel.like()
+        pending.completion?(.success(()))
+        await firstTap.value
+
+        #expect(viewModel.isLiked)
+        verify(service.likePost(id: 1, completion: { _ in })).called(1)
+    }
+}
+
+/// Holds a completion handler that a test calls later.
+private final class PendingCompletion {
+    var completion: (@Sendable (Result<Void, any Error>) -> Void)?
 }

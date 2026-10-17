@@ -16,6 +16,7 @@ final class PostDetailViewModel {
     private(set) var state: State = .loading
     private(set) var isLiked = false
     private(set) var likeError: String?
+    private var isLiking = false
     private let service: any PostService
 
     init(post: Post, service: any PostService) {
@@ -35,7 +36,9 @@ final class PostDetailViewModel {
     }
 
     func like() async {
-        guard !isLiked else { return }
+        guard !isLiked, !isLiking else { return }
+        isLiking = true
+        defer { isLiking = false }
         do {
             // `likePost` reports through a completion handler; the continuation turns it into `await`.
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
