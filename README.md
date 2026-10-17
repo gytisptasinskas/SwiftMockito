@@ -236,6 +236,8 @@ A call that matches no stub behaves according to the member:
 
 Stub every non-throwing member that returns a value, or the whole test run stops at the first one you forgot.
 
+The same applies while recording: a non-throwing member whose return type has no dummy (see Dummies below) is reported as `MissingDummyError`, then traps.
+
 ## Dummies
 
 While `when` or `verify` records a call, a non-throwing member must return something. SwiftMockito returns a dummy value. Dummies exist only while recording and never reach the code under test.
@@ -264,7 +266,7 @@ provideDummy(CGSize(width: 1, height: 1))
 provideDummy(Sub() as Base)
 ```
 
-If a dummy is needed at runtime and none exists, the test fails with `MissingDummyError`, which names the type and suggests `provideDummy`.
+If a non-throwing member is recorded and no dummy exists for its return type, SwiftMockito reports `MissingDummyError` (the type and the member, with a hint to call `provideDummy`) **and then traps, which ends the whole test process**.
 
 ## Not supported
 
