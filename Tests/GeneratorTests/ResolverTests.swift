@@ -167,6 +167,39 @@ func methods(_ model: MockModel) -> [Method] {
         #expect(parameters.map(\.name) == ["arg0", "other"])
     }
 
+    @Test(arguments: [
+        ("subscript(i: Int) -> Int { get async }", "Client: subscripts with async or throws getters are not supported"),
+        ("subscript(i: Int) -> Int { get throws }", "Client: subscripts with async or throws getters are not supported"),
+        ("subscript(i: Int) -> Int { get async throws }", "Client: subscripts with async or throws getters are not supported"),
+        ("subscript<T>(i: T) -> Int { get }", "Client: generic subscripts are not supported"),
+        ("@objc optional func f()", "Client: Objective-C protocols are not supported"),
+    ])
+    func unsupportedSubscriptsAndObjectiveCRequirements(requirement: String, message: String) {
+        guard case .failure(let failure) = resolve("protocol Client { \(requirement) }") else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics == [GeneratorDiagnostic(severity: .error, message: message, path: "/t/Mocks.swift", line: 4, column: 1)])
+    }
+
+    @Test func objectiveCProtocolIsUnsupported() {
+        guard case .failure(let failure) = resolve("@objc protocol Client { func f() }") else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == ["Client: Objective-C protocols are not supported"])
+    }
+
+    @Test func overloadedSubscriptsGetSignatureIdentities() throws {
+        let model = try resolve("""
+            protocol Client {
+                subscript(index: Int) -> String { get }
+                subscript(key: String) -> String { get set }
+                subscript(key: String, fallback: Int) -> String { get }
+            }
+            """).get()
+        let identities = model.members.compactMap { member -> String? in
+            if case .subscriptMember(let s) = member { s.identity } else { nil }
+        }
+        #expect(identities == ["subscript(_:) (Int) -> String", "subscript(_:) (String) -> String", "subscript(_:_:)"])
+    }
+
     @Test func globalActorAndAccessAreCarried() throws {
         let model = try resolve("@MainActor public protocol Client { func f() }").get()
         #expect(model.globalActor == "MainActor")

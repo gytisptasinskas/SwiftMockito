@@ -40,6 +40,22 @@ private func makeTempDirectory() throws -> URL {
         #expect(errors.hasPrefix("\(marked.path):1:1: error: Missing: protocol not found"))
     }
 
+    @Test func undeclaredOutputReturnsOneAndStillWritesTheFile() throws {
+        let dir = try makeTempDirectory()
+        let marked = dir.appending(path: "Mocks.swift")
+        try "@GenerateMock(Client.self)\nenum Mocks {}\n".write(to: marked, atomically: true, encoding: .utf8)
+        let out = dir.appending(path: "out")
+        var errors = ""
+        let code = Generator.run(arguments: [
+            "generate", "--test-module", "SwiftMockitoTests", "--output", out.path, "--marked", marked.path,
+            "--source", "SwiftMockitoTests=\(fixtures.appending(path: "Client.swift").path)",
+            "--expect", "MockCatalog.swift",
+        ], stderr: { errors += $0 })
+        #expect(code == 1)
+        #expect(errors.contains("error: MockClient.swift was not declared by the build plugin"))
+        #expect(FileManager.default.fileExists(atPath: out.appending(path: "MockClient.swift").path))
+    }
+
     @Test func usageErrorReturnsTwo() {
         var errors = ""
         #expect(Generator.run(arguments: ["bogus"], stderr: { errors += $0 }) == 2)

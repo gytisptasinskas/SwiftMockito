@@ -55,11 +55,13 @@ struct Property: Equatable {
 }
 
 struct Subscript: Equatable {
+    var identity: String
     let parameters: [Parameter]
     let returnType: String
     let hasSetter: Bool
 
-    var identity: String { "subscript(\(parameters.map { "\($0.label ?? "_"):" }.joined()))" }
+    var baseIdentity: String { "subscript(\(parameters.map { "\($0.label ?? "_"):" }.joined()))" }
+    var signature: String { "(\(parameters.map(\.type).joined(separator: ", "))) -> \(returnType)" }
 }
 
 enum Member: Equatable {

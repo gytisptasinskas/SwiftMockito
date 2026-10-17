@@ -65,6 +65,14 @@ struct ProtocolResolver {
             let name = decl.node.name.text
             guard visited.insert(name).inserted else { return }
             files.append(decl.input.path)
+            let isObjC = decl.node.attributes.contains { $0.as(AttributeSyntax.self)?.attributeName.trimmedDescription == "objc" }
+                || decl.node.memberBlock.members.contains { item in
+                    item.decl.asProtocol(WithModifiersSyntax.self)?.modifiers.contains { $0.name.text == "optional" } == true
+                }
+            if isObjC {
+                diagnostics.append(.error("\(name): Objective-C protocols are not supported", at: marker))
+                return
+            }
             for inherited in decl.node.inheritanceClause?.inheritedTypes ?? [] {
                 let parent = inherited.type.trimmedDescription
                 if parent == "Actor" {
@@ -149,7 +157,13 @@ struct ProtocolResolver {
         }
 
         if let sub = decl.as(SubscriptDeclSyntax.self) {
+            if sub.genericParameterClause != nil { return unsupported("generic subscripts") }
+            let getter = accessorList(sub.accessorBlock).first { $0.accessorSpecifier.text == "get" }
+            if getter?.effectSpecifiers?.asyncSpecifier != nil || getter?.effectSpecifiers?.throwsClause != nil {
+                return unsupported("subscripts with async or throws getters")
+            }
             return .success(.subscriptMember(Subscript(
+                identity: "",
                 // Subscript parameters have no external label unless the name is written twice.
                 parameters: sub.parameterClause.parameters.enumerated().map { position, p in
                     parameter(label: p.secondName == nil ? "_" : p.firstName.text,
@@ -253,11 +267,24 @@ struct ProtocolResolver {
 
     private func disambiguateOverloads(_ members: [Member]) -> [Member] {
         var counts: [String: Int] = [:]
-        for case .method(let m) in members { counts[m.baseIdentity, default: 0] += 1 }
+        for member in members {
+            switch member {
+            case .method(let m): counts[m.baseIdentity, default: 0] += 1
+            case .subscriptMember(let s): counts[s.baseIdentity, default: 0] += 1
+            case .property: break
+            }
+        }
         return members.map { member in
-            guard case .method(var m) = member else { return member }
-            m.identity = counts[m.baseIdentity, default: 0] > 1 ? "\(m.baseIdentity) \(m.signature)" : m.baseIdentity
-            return .method(m)
+            switch member {
+            case .method(var m):
+                m.identity = counts[m.baseIdentity, default: 0] > 1 ? "\(m.baseIdentity) \(m.signature)" : m.baseIdentity
+                return .method(m)
+            case .subscriptMember(var s):
+                s.identity = counts[s.baseIdentity, default: 0] > 1 ? "\(s.baseIdentity) \(s.signature)" : s.baseIdentity
+                return .subscriptMember(s)
+            case .property:
+                return member
+            }
         }
     }
 }

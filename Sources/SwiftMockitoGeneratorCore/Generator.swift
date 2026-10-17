@@ -36,6 +36,10 @@ public enum Generator {
                 diagnostics.append(.error("Mock\(marker.protocolName) is generated twice; remove the duplicate @GenerateMock(\(marker.protocolName).self)", at: marker))
                 continue
             }
+            if !configuration.expectedFiles.isEmpty, !configuration.expectedFiles.contains(fileName) {
+                // The file is still written; the build fails on this error rather than on a missing output.
+                diagnostics.append(.error("\(fileName) was not declared by the build plugin (the marker could not be read by the plugin's scanner); put @GenerateMock(...) on one line without a trailing comma", at: marker))
+            }
             switch resolver.resolve(marker, testModule: configuration.testModule) {
             case .success(let model):
                 let synthesizer = DummySynthesizer(index: index, model: model, testModule: configuration.testModule)
