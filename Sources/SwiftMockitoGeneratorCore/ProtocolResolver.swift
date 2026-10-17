@@ -231,8 +231,8 @@ struct ProtocolResolver {
                 name: name,
                 type: p.type.trimmedDescription,
                 isClosure: isClosure(resolved),
-                isMetatype: resolved.is(MetatypeTypeSyntax.self),
                 isNonEscapingClosure: p.ellipsis == nil && isNonEscapingClosure(p.type),
+                isMetatype: resolved.is(MetatypeTypeSyntax.self),
                 isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1,
                 isVariadic: p.ellipsis != nil
             )
