@@ -20,6 +20,28 @@ import Testing
         #expect(MarkerScanner.protocolNames(in: text) == parsed)
     }
 
+    @Test func ignoresProseWithAnUnterminatedMarkerAndFindsTheRealOne() {
+        let text = """
+            /// Mark protocols with @GenerateMock( and a list
+            @GenerateMock(Client.self)
+            enum Mocks {}
+            """
+        #expect(MarkerScanner.protocolNames(in: text) == ["Client"])
+        let parsed = SourceIndex([SourceInput(path: "/m", module: "T", text: text)]).markers(in: ["/m"]).map(\.protocolName)
+        #expect(MarkerScanner.protocolNames(in: text) == parsed)
+    }
+
+    @Test func findsMultiLineMultiNameMarkers() {
+        let text = "@GenerateMock(\n    Client.self,\n    Catalog.self\n)\nenum Mocks {}\n"
+        #expect(MarkerScanner.protocolNames(in: text) == ["Client", "Catalog"])
+        let parsed = SourceIndex([SourceInput(path: "/m", module: "T", text: text)]).markers(in: ["/m"]).map(\.protocolName)
+        #expect(MarkerScanner.protocolNames(in: text) == parsed)
+    }
+
+    @Test func keepsQualifiedNames() {
+        #expect(MarkerScanner.protocolNames(in: "@GenerateMock(App.Client.self)") == ["App.Client"])
+    }
+
     @Test func pluginCopyIsIdentical() throws {
         let root = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let library = try String(contentsOf: root.appending(path: "Sources/SwiftMockitoGeneratorCore/MarkerScanner.swift"), encoding: .utf8)
