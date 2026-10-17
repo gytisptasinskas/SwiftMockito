@@ -1,6 +1,9 @@
 import Testing
 @testable import SwiftMockito
 
+@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Edge.self, Store.self, Shapes.self)
+enum Mocks {}
+
 @Suite struct ClientAcceptanceTests {
     let client = MockClient()
     var sut: UserRepository { UserRepository(client: client) }

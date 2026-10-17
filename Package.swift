@@ -1,5 +1,6 @@
 // swift-tools-version: 6.2
 
+import CompilerPluginSupport
 import PackageDescription
 
 let package = Package(
@@ -13,7 +14,14 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-syntax.git", "600.0.0"..<"700.0.0"),
     ],
     targets: [
-        .target(name: "SwiftMockito"),
+        .macro(
+            name: "SwiftMockitoMacros",
+            dependencies: [
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+            ]
+        ),
+        .target(name: "SwiftMockito", dependencies: ["SwiftMockitoMacros"]),
         .testTarget(name: "SwiftMockitoTests", dependencies: ["SwiftMockito"]),
         .target(
             name: "SwiftMockitoGeneratorCore",
@@ -27,6 +35,8 @@ let package = Package(
             name: "GeneratorTests",
             dependencies: [
                 "SwiftMockitoGeneratorCore",
+                "SwiftMockitoMacros",
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
                 .product(name: "SwiftSyntax", package: "swift-syntax"),
                 .product(name: "SwiftParser", package: "swift-syntax"),
             ]
