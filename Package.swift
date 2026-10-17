@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "SwiftMockito", targets: ["SwiftMockito"]),
         .executable(name: "SwiftMockitoGenerator", targets: ["SwiftMockitoGenerator"]),
+        .plugin(name: "SwiftMockitoPlugin", targets: ["SwiftMockitoPlugin"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", "600.0.0"..<"700.0.0"),
@@ -31,6 +32,7 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "SwiftMockitoGenerator", dependencies: ["SwiftMockitoGeneratorCore"]),
+        .plugin(name: "SwiftMockitoPlugin", capability: .buildTool(), dependencies: ["SwiftMockitoGenerator"]),
         .testTarget(
             name: "GeneratorTests",
             dependencies: [
