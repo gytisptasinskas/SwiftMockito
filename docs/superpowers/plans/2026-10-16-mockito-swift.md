@@ -3785,7 +3785,7 @@ git commit -m "feat: parse marked protocols into a mock model with diagnostics"
 - Create: `Tests/GeneratorTests/CLITests.swift`
 
 **Interfaces:**
-- Consumes: the Task 12 model, plus the Task 11 goldens, read from `Tests/SwiftMockitoTests/Fixtures/` relative to `#filePath`.
+- Consumes: the Task 12 model, plus the Task 11 goldens (`MockClient`, `MockCatalog`, `MockScreen`, `MockFeed`), read from `Tests/SwiftMockitoTests/Fixtures/` relative to `#filePath`. `MockFeed` is the contract for `public` access, async and throwing property getters (`get async` / `get throws` blocks), async methods with and without a value, and a generic value-returning member.
 - Produces:
   - `public struct GeneratorConfiguration { markedPaths: [String]; inputs: [SourceInput]; testModule: String; outputDirectory: String; expectedFiles: [String] = [] }`
   - `public struct GeneratorResult { files: [String: String] /* file name → contents */; diagnostics: [GeneratorDiagnostic]; var hasErrors: Bool }`
@@ -3809,7 +3809,7 @@ let fixtures = URL(filePath: #filePath).deletingLastPathComponent()
 
 /// Every fixture protocol file that exists so far (Store arrives in Task 14).
 func fixtureInputs() -> [SourceInput] {
-    ["Client.swift", "Catalog.swift", "Screen.swift", "Store.swift"].compactMap { name in
+    ["Client.swift", "Catalog.swift", "Screen.swift", "Feed.swift", "Store.swift"].compactMap { name in
         let url = fixtures.appending(path: name)
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return SourceInput(path: url.path, module: "SwiftMockitoTests", text: text)
@@ -3825,7 +3825,7 @@ func generate(marking names: [String], module: String = "SwiftMockitoTests") -> 
 }
 
 @Suite struct SnapshotTests {
-    @Test(arguments: ["Client", "Catalog", "Screen"])
+    @Test(arguments: ["Client", "Catalog", "Screen", "Feed"])
     func generatorReproducesGolden(protocolName: String) throws {
         let result = generate(marking: [protocolName])
         #expect(result.diagnostics.isEmpty)
@@ -4694,7 +4694,7 @@ final class MacroTests: XCTestCase {
 Add at the top level of `Tests/SwiftMockitoTests/ClientAcceptanceTests.swift`. This proves the macro compiles in a real test target; the goldens stay checked in:
 
 ```swift
-@GenerateMock(Client.self, Catalog.self, Screen.self, Store.self)
+@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Store.self)
 enum Mocks {}
 ```
 
@@ -5087,11 +5087,11 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="$(mktemp -d)"
 fixtures="$root/Tests/SwiftMockitoTests/Fixtures"
-printf '@GenerateMock(Client.self, Catalog.self, Screen.self, Store.self)\nenum Mocks {}\n' > "$out/Mocks.swift"
+printf '@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Store.self)\nenum Mocks {}\n' > "$out/Mocks.swift"
 swift run --package-path "$root" SwiftMockitoGenerator generate \
   --test-module SwiftMockitoTests --output "$out/generated" --marked "$out/Mocks.swift" \
   --source-dir "SwiftMockitoTests=$fixtures"
-for name in MockClient MockCatalog MockScreen MockStore; do
+for name in MockClient MockCatalog MockScreen MockFeed MockStore; do
   diff -u "$fixtures/$name.swift" "$out/generated/$name.swift"
 done
 echo "checked-in mocks are up to date"
