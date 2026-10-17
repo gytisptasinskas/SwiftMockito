@@ -27,5 +27,6 @@ public func when<R, E: Error>(
 private func stubTarget(_ recorded: Recorded, site: CallSite) -> StubTarget? {
     guard recorded.checkSupported(at: site) else { return nil }
     return StubTarget(runtime: recorded.runtime, member: recorded.member, key: recorded.key,
-                      argumentsType: recorded.argumentsType, effects: recorded.effects, site: site)
+                      argumentsType: recorded.argumentsType, effects: recorded.effects,
+                      returnType: recorded.returnType, site: site)
 }

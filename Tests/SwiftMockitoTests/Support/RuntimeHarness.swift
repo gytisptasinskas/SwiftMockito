@@ -11,7 +11,8 @@ func stub<R, each A>(
     site: CallSite = CallSite()
 ) -> Stub<R, any Error> {
     Stub(target: StubTarget(runtime: runtime, member: member, key: key,
-                            argumentsType: argumentTypes, effects: effects, site: site))
+                            argumentsType: argumentTypes, effects: effects,
+                            returnType: returning, site: site))
 }
 
 final class Harness: Mock, @unchecked Sendable {

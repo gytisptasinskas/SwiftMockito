@@ -14,6 +14,8 @@ struct StubTarget {
     let key: [Argument]
     let argumentsType: Any.Type
     let effects: Effects
+    /// The member's declared return type, which `thenReturn`/`thenAnswer` must match.
+    let returnType: Any.Type
     let site: CallSite
 
     var qualifiedMember: String { "\(runtime.mockName).\(member)" }
@@ -47,8 +49,20 @@ public struct Stub<R, Failure: Error> {
             Reporter.fail("thenReturn for \(target.qualifiedMember) needs at least one value.", at: target.site)
             return self
         }
+        guard checkReturnType(of: target) else { return self }
         target.runtime.install(StubRecord(target: target, response: .values(values)))
         return self
+    }
+
+    /// Reports and returns false when the stub's `R` is not the member's return type. Such a
+    /// stub would otherwise install and later trap at `as! R` when the real call is answered.
+    fileprivate func checkReturnType(of target: StubTarget) -> Bool {
+        guard ObjectIdentifier(R.self) != ObjectIdentifier(target.returnType) else { return true }
+        Reporter.fail(
+            "when: the closure evaluates to \(typeDescription(R.self)) but \(target.qualifiedMember) returns \(typeDescription(target.returnType)); put only the member call in the closure (no try?, ??, or conversions).",
+            at: target.site
+        )
+        return false
     }
 
     @discardableResult
@@ -80,6 +94,7 @@ public struct Stub<R, Failure: Error> {
             Reporter.fail("thenAnswer for \(target.qualifiedMember) is async but the member is synchronous.", at: target.site)
             return self
         }
+        guard checkReturnType(of: target) else { return self }
         target.runtime.install(StubRecord(target: target, response: .answer(answer)))
         return self
     }
@@ -116,16 +131,22 @@ extension Stub where Failure == any Error {
     }
 }
 
+/// `String(reflecting:)` without the `Swift.` module prefix of standard-library types.
+func typeDescription(_ type: Any.Type) -> String {
+    String(reflecting: type).replacingOccurrences(of: "Swift.", with: "")
+}
+
 /// Formats a type as an argument list: `(String)` for one type, `(String, Int)` for a
 /// tuple, `()` for Void. Strips the `Swift.` module prefix of standard-library types.
 func parenthesized(_ type: Any.Type) -> String {
-    let name = String(reflecting: type).replacingOccurrences(of: "Swift.", with: "")
+    let name = typeDescription(type)
     return name.hasPrefix("(") ? name : "(\(name))"
 }
 
-/// Carries a stub's arguments to the user's `@concurrent` async answer. The answer closure is the
-/// user's own code, and a mock call is expected to hand its arguments to it, so the usual
-/// non-`Sendable` check is waived here rather than leaking into every async answer signature.
+/// Carries a stub's arguments to the user's answer. The answer closure is the user's own code,
+/// and a mock call is expected to hand its arguments to it, so the usual non-`Sendable` check
+/// is waived here rather than leaking into every answer signature. The hazard is real for sync
+/// answers too: both kinds run on whatever thread or actor the code under test calls the mock from.
 private struct UncheckedSendable<T>: @unchecked Sendable {
     let value: T
     init(_ value: T) { self.value = value }

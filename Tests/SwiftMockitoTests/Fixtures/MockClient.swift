@@ -10,7 +10,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
     var token: String {
         get {
             if let capture = Capture.current {
-                capture.record(runtime, "token", key: [])
+                capture.record(runtime, "token", key: [], returns: String.self)
                 return Dummies.resolve(String.self, for: "MockClient.token")
             }
             return runtime.invoke("token", key: [])
@@ -26,7 +26,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
 
     var currentUser: User {
         if let capture = Capture.current {
-            capture.record(runtime, "currentUser", key: [])
+            capture.record(runtime, "currentUser", key: [], returns: User.self)
             return Dummies.resolve(User.self, for: "MockClient.currentUser", fallback: Self._dummyUser)
         }
         return runtime.invoke("currentUser", key: [])
@@ -34,7 +34,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
 
     func cached(id: String) -> User? {
         if let capture = Capture.current {
-            capture.record(runtime, "cached(id:)", key: [arg(id)], args: id)
+            capture.record(runtime, "cached(id:)", key: [arg(id)], args: id, returns: User?.self)
             return Dummies.resolve(User?.self, for: "MockClient.cached(id:)")
         }
         return runtime.invoke("cached(id:)", key: [arg(id)], args: id)
@@ -42,7 +42,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
 
     nonisolated(nonsending) func fetch(id: String) async throws -> User {
         if let capture = Capture.current {
-            capture.record(runtime, "fetch(id:)", key: [arg(id)], args: id, effects: [.async, .throwing])
+            capture.record(runtime, "fetch(id:)", key: [arg(id)], args: id, effects: [.async, .throwing], returns: User.self)
             if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(User.self, fallback: Self._dummyUser) { return placeholder }
             throw CaptureSignal()
         }

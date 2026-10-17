@@ -10,7 +10,7 @@ final class SampleMock: Mock, @unchecked Sendable {
 
     func cached(id: String) -> String? {
         if let capture = Capture.current {
-            capture.record(runtime, "cached(id:)", key: [arg(id)], args: id)
+            capture.record(runtime, "cached(id:)", key: [arg(id)], args: id, returns: String?.self)
             return nil
         }
         return runtime.invoke("cached(id:)", key: [arg(id)], args: id)
@@ -18,7 +18,7 @@ final class SampleMock: Mock, @unchecked Sendable {
 
     nonisolated(nonsending) func fetch(id: String) async throws -> String {
         if let capture = Capture.current {
-            capture.record(runtime, "fetch(id:)", key: [arg(id)], args: id, effects: [.async, .throwing])
+            capture.record(runtime, "fetch(id:)", key: [arg(id)], args: id, effects: [.async, .throwing], returns: String.self)
             if Capture.continuesAfterRecord { return "" }
             throw CaptureSignal()
         }
@@ -37,7 +37,7 @@ final class SampleMock: Mock, @unchecked Sendable {
     /// Generic return with no placeholder: always signals while recording.
     func decode<T>(_ type: T.Type) throws -> T {
         if let capture = Capture.current {
-            capture.record(runtime, "decode(_:)", key: [arg(type: T.self), arg(type: type)], args: type, effects: .throwing)
+            capture.record(runtime, "decode(_:)", key: [arg(type: T.self), arg(type: type)], args: type, effects: .throwing, returns: T.self)
             throw CaptureSignal()
         }
         return try runtime.invokeThrowing("decode(_:)", key: [arg(type: T.self), arg(type: type)], args: type)
@@ -46,7 +46,7 @@ final class SampleMock: Mock, @unchecked Sendable {
     var token: String {
         get {
             if let capture = Capture.current {
-                capture.record(runtime, "token", key: [])
+                capture.record(runtime, "token", key: [], returns: String.self)
                 return ""
             }
             return runtime.invoke("token", key: [])

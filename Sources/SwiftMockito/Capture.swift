@@ -26,10 +26,11 @@ public final class Capture: @unchecked Sendable {
         _ member: String,
         key: [Argument],
         args: repeat each A,
-        effects: Effects = []
+        effects: Effects = [],
+        returns: Any.Type = Void.self
     ) {
         let entry = Recorded(runtime: runtime, member: member, key: key,
-                             argumentsType: (repeat each A).self, effects: effects)
+                             argumentsType: (repeat each A).self, effects: effects, returnType: returns)
         lock.withLock { recorded.append(entry) }
     }
 
@@ -42,6 +43,8 @@ struct Recorded {
     let key: [Argument]
     let argumentsType: Any.Type
     let effects: Effects
+    /// The member's declared return type; `Void` when it returns nothing.
+    let returnType: Any.Type
 
     var qualifiedMember: String { "\(runtime.mockName).\(member)" }
     var keyDescription: String { "(\(key.map(\.description).joined(separator: ", ")))" }
@@ -142,7 +145,9 @@ func captureAll(
 func captureAll(site: CallSite, _ body: () -> Void) -> [Recorded] {
     let capture = Capture()
     Capture.$current.withValue(capture) {
-        Capture.$currentSite.withValue(site, operation: body)
+        Capture.$currentSite.withValue(site) {
+            Capture.$continuesAfterRecord.withValue(false, operation: body)
+        }
     }
     return capture.snapshot
 }

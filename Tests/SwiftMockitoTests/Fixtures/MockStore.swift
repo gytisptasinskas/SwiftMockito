@@ -9,7 +9,7 @@ final class MockStore: Mock, Store, @unchecked Sendable {
 
     func profile() -> Profile {
         if let capture = Capture.current {
-            capture.record(runtime, "profile()", key: [])
+            capture.record(runtime, "profile()", key: [], returns: Profile.self)
             return Dummies.resolve(Profile.self, for: "MockStore.profile()", fallback: Self._dummyProfile)
         }
         return runtime.invoke("profile()", key: [])
@@ -17,7 +17,7 @@ final class MockStore: Mock, Store, @unchecked Sendable {
 
     func status() -> Status {
         if let capture = Capture.current {
-            capture.record(runtime, "status()", key: [])
+            capture.record(runtime, "status()", key: [], returns: Status.self)
             return Dummies.resolve(Status.self, for: "MockStore.status()", fallback: Self._dummyStatus)
         }
         return runtime.invoke("status()", key: [])
@@ -25,7 +25,7 @@ final class MockStore: Mock, Store, @unchecked Sendable {
 
     func session() -> Session {
         if let capture = Capture.current {
-            capture.record(runtime, "session()", key: [])
+            capture.record(runtime, "session()", key: [], returns: Session.self)
             return Dummies.resolve(Session.self, for: "MockStore.session()", fallback: Self._dummySession)
         }
         return runtime.invoke("session()", key: [])
@@ -33,7 +33,7 @@ final class MockStore: Mock, Store, @unchecked Sendable {
 
     func logger() -> any Logger {
         if let capture = Capture.current {
-            capture.record(runtime, "logger()", key: [])
+            capture.record(runtime, "logger()", key: [], returns: (any Logger).self)
             return Dummies.resolve((any Logger).self, for: "MockStore.logger()", fallback: Self._dummyLogger)
         }
         return runtime.invoke("logger()", key: [])
@@ -41,7 +41,7 @@ final class MockStore: Mock, Store, @unchecked Sendable {
 
     func pair() -> (Int, String) {
         if let capture = Capture.current {
-            capture.record(runtime, "pair()", key: [])
+            capture.record(runtime, "pair()", key: [], returns: (Int, String).self)
             return Dummies.resolve((Int, String).self, for: "MockStore.pair()", fallback: { (Dummies.resolve(Int.self, for: "MockStore.pair().0"), Dummies.resolve(String.self, for: "MockStore.pair().1")) })
         }
         return runtime.invoke("pair()", key: [])
@@ -49,7 +49,7 @@ final class MockStore: Mock, Store, @unchecked Sendable {
 
     func result() -> Result<Profile, Error> {
         if let capture = Capture.current {
-            capture.record(runtime, "result()", key: [])
+            capture.record(runtime, "result()", key: [], returns: Result<Profile, Error>.self)
             return Dummies.resolve(Result<Profile, Error>.self, for: "MockStore.result()", fallback: { .success(Self._dummyProfile()) })
         }
         return runtime.invoke("result()", key: [])

@@ -16,7 +16,7 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
 
     func find(for arg0: String) -> Int {
         if let capture = Capture.current {
-            capture.record(runtime, "find(for:)", key: [arg(arg0)], args: arg0)
+            capture.record(runtime, "find(for:)", key: [arg(arg0)], args: arg0, returns: Int.self)
             return Dummies.resolve(Int.self, for: "MockEdge.find(for:)")
         }
         return runtime.invoke("find(for:)", key: [arg(arg0)], args: arg0)
@@ -32,7 +32,7 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
 
     func handler() -> (Int) -> Void {
         if let capture = Capture.current {
-            capture.record(runtime, "handler()", key: [])
+            capture.record(runtime, "handler()", key: [], returns: ((Int) -> Void).self)
             return Dummies.resolve(((Int) -> Void).self, for: "MockEdge.handler()", fallback: { { _ in fatalError("SwiftMockito: dummy closure must not be called") } })
         }
         return runtime.invoke("handler()", key: [])
@@ -40,7 +40,7 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
 
     var transform: ((String) -> String)? {
         if let capture = Capture.current {
-            capture.record(runtime, "transform", key: [])
+            capture.record(runtime, "transform", key: [], returns: ((String) -> String)?.self)
             return Dummies.resolve(((String) -> String)?.self, for: "MockEdge.transform")
         }
         return runtime.invoke("transform", key: [])
@@ -48,7 +48,7 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
 
     func legacy() -> String! {
         if let capture = Capture.current {
-            capture.record(runtime, "legacy()", key: [])
+            capture.record(runtime, "legacy()", key: [], returns: String?.self)
             return Dummies.resolve(String?.self, for: "MockEdge.legacy()")
         }
         return runtime.invoke("legacy()", key: [])
@@ -56,7 +56,7 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
 
     func process(arg arg0: Int) -> Int {
         if let capture = Capture.current {
-            capture.record(runtime, "process(arg:)", key: [arg(arg0)], args: arg0)
+            capture.record(runtime, "process(arg:)", key: [arg(arg0)], args: arg0, returns: Int.self)
             return Dummies.resolve(Int.self, for: "MockEdge.process(arg:)")
         }
         return runtime.invoke("process(arg:)", key: [arg(arg0)], args: arg0)

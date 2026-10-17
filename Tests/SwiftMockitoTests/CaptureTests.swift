@@ -39,6 +39,36 @@ import Testing
         } == ["when: expected exactly one mock call, recorded 2 (SampleMock.cached(id:), SampleMock.cached(id:)). @SwiftMockitoTests/CaptureTests.swift"])
     }
 
+    @Test func stubWhoseClosureTypeDiffersFromTheMemberIsRejected() {
+        #expect(failures {
+            when { try? await mock.fetch(id: "1") }.thenReturn(nil)
+        } == ["when: the closure evaluates to Optional<String> but SampleMock.fetch(id:) returns String; put only the member call in the closure (no try?, ??, or conversions). @SwiftMockitoTests/CaptureTests.swift"])
+        #expect(mock.runtime.stubsSnapshot(member: "fetch(id:)").isEmpty)
+    }
+
+    @Test func syncStubWhoseClosureTypeDiffersFromTheMemberIsRejected() {
+        #expect(failures {
+            when(mock.cached(id: "1") ?? "x").thenReturn("y")
+        } == ["when: the closure evaluates to String but SampleMock.cached(id:) returns Optional<String>; put only the member call in the closure (no try?, ??, or conversions). @SwiftMockitoTests/CaptureTests.swift"])
+        #expect(mock.runtime.stubsSnapshot(member: "cached(id:)").isEmpty)
+    }
+
+    @Test func answersWhoseResultTypeDiffersFromTheMemberAreRejected() {
+        let expected = "when: the closure evaluates to Optional<String> but SampleMock.fetch(id:) returns String; put only the member call in the closure (no try?, ??, or conversions). @SwiftMockitoTests/CaptureTests.swift"
+        #expect(failures {
+            when { try? await mock.fetch(id: "1") }.thenAnswer { (id: String) -> String? in id }
+        } == [expected])
+        #expect(failures {
+            when { try? await mock.fetch(id: "1") }.thenAnswer { (id: String) async -> String? in id }
+        } == [expected])
+        #expect(mock.runtime.stubsSnapshot(member: "fetch(id:)").isEmpty)
+    }
+
+    @Test func matchingTypeStillInstallsAndAnswers() async throws {
+        when { try await mock.fetch(id: "1") }.thenAnswer { (id: String) -> String in "got \(id)" }
+        #expect(try await mock.fetch(id: "1") == "got 1")
+    }
+
     @Test func unsupportedArgumentFailsStubbingButRealCallsWork() {
         let expected = UnsupportedExactMatchingError(member: "SampleMock.render(_:)", position: 0,
                                                      typeName: String(reflecting: Opaque.self)).description

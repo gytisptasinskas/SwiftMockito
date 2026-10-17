@@ -10,7 +10,7 @@ final class MockCatalog: Mock, Catalog, @unchecked Sendable {
     subscript(index: Int) -> String {
         get {
             if let capture = Capture.current {
-                capture.record(runtime, "subscript(_:)", key: [arg(index)], args: index)
+                capture.record(runtime, "subscript(_:)", key: [arg(index)], args: index, returns: String.self)
                 return Dummies.resolve(String.self, for: "MockCatalog.subscript(_:)")
             }
             return runtime.invoke("subscript(_:)", key: [arg(index)], args: index)
@@ -26,7 +26,7 @@ final class MockCatalog: Mock, Catalog, @unchecked Sendable {
 
     func item(id: Int) -> String {
         if let capture = Capture.current {
-            capture.record(runtime, "item(id:) (Int) -> String", key: [arg(id)], args: id)
+            capture.record(runtime, "item(id:) (Int) -> String", key: [arg(id)], args: id, returns: String.self)
             return Dummies.resolve(String.self, for: "MockCatalog.item(id:) (Int) -> String")
         }
         return runtime.invoke("item(id:) (Int) -> String", key: [arg(id)], args: id)
@@ -34,7 +34,7 @@ final class MockCatalog: Mock, Catalog, @unchecked Sendable {
 
     func item(id: String) -> String {
         if let capture = Capture.current {
-            capture.record(runtime, "item(id:) (String) -> String", key: [arg(id)], args: id)
+            capture.record(runtime, "item(id:) (String) -> String", key: [arg(id)], args: id, returns: String.self)
             return Dummies.resolve(String.self, for: "MockCatalog.item(id:) (String) -> String")
         }
         return runtime.invoke("item(id:) (String) -> String", key: [arg(id)], args: id)
@@ -42,7 +42,7 @@ final class MockCatalog: Mock, Catalog, @unchecked Sendable {
 
     func decode<T: Decodable>(_ data: Data, as type: T.Type) throws -> T {
         if let capture = Capture.current {
-            capture.record(runtime, "decode(_:as:)", key: [arg(type: T.self), arg(data), arg(type: type)], args: data, type, effects: .throwing)
+            capture.record(runtime, "decode(_:as:)", key: [arg(type: T.self), arg(data), arg(type: type)], args: data, type, effects: .throwing, returns: T.self)
             if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(T.self) { return placeholder }
             throw CaptureSignal()
         }
@@ -59,7 +59,7 @@ final class MockCatalog: Mock, Catalog, @unchecked Sendable {
 
     func describe(_ reference: Reference) -> String {
         if let capture = Capture.current {
-            capture.record(runtime, "describe(_:)", key: [arg(reference)], args: reference)
+            capture.record(runtime, "describe(_:)", key: [arg(reference)], args: reference, returns: String.self)
             return Dummies.resolve(String.self, for: "MockCatalog.describe(_:)")
         }
         return runtime.invoke("describe(_:)", key: [arg(reference)], args: reference)

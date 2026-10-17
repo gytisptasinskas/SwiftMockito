@@ -9,7 +9,7 @@ public final class MockFeed: Mock, Feed, @unchecked Sendable {
     public nonisolated(nonsending) var latest: Int {
         get async {
             if let capture = Capture.current {
-                capture.record(runtime, "latest", key: [], effects: .async)
+                capture.record(runtime, "latest", key: [], effects: .async, returns: Int.self)
                 return Dummies.resolve(Int.self, for: "MockFeed.latest")
             }
             return await runtime.invoke("latest", key: [])
@@ -19,7 +19,7 @@ public final class MockFeed: Mock, Feed, @unchecked Sendable {
     public var config: String {
         get throws {
             if let capture = Capture.current {
-                capture.record(runtime, "config", key: [], effects: .throwing)
+                capture.record(runtime, "config", key: [], effects: .throwing, returns: String.self)
                 if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(String.self) { return placeholder }
                 throw CaptureSignal()
             }
@@ -37,7 +37,7 @@ public final class MockFeed: Mock, Feed, @unchecked Sendable {
 
     public nonisolated(nonsending) func count() async -> Int {
         if let capture = Capture.current {
-            capture.record(runtime, "count()", key: [], effects: .async)
+            capture.record(runtime, "count()", key: [], effects: .async, returns: Int.self)
             return Dummies.resolve(Int.self, for: "MockFeed.count()")
         }
         return await runtime.invoke("count()", key: [])
@@ -45,7 +45,7 @@ public final class MockFeed: Mock, Feed, @unchecked Sendable {
 
     public func first<T: Equatable>(in items: [T]) -> T? {
         if let capture = Capture.current {
-            capture.record(runtime, "first(in:)", key: [arg(type: T.self), arg(items)], args: items)
+            capture.record(runtime, "first(in:)", key: [arg(type: T.self), arg(items)], args: items, returns: T?.self)
             return Dummies.resolve(T?.self, for: "MockFeed.first(in:)")
         }
         return runtime.invoke("first(in:)", key: [arg(type: T.self), arg(items)], args: items)

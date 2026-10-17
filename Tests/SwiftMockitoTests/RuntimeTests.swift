@@ -119,7 +119,7 @@ private enum MainActorBoxes { @MainActor static let shared = PlainBox() }
 
     @Test func neverFailureStubAcceptsNonThrowingCallbackAnswer() {
         let target = StubTarget(runtime: runtime, member: "run(id:done:)", key: [arg("1")],
-                                argumentsType: (String, (String) -> Void).self, effects: [], site: CallSite())
+                                argumentsType: (String, (String) -> Void).self, effects: [], returnType: Void.self, site: CallSite())
         Stub<Void, Never>(target: target)
             .thenAnswer { (id: String, done: @escaping (String) -> Void) in done(id) }
         let box = MessageBox()

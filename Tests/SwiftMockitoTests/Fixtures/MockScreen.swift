@@ -9,7 +9,7 @@ final class MockScreen: Mock, Screen, @unchecked Sendable {
 
     var isVisible: Bool {
         if let capture = Capture.current {
-            capture.record(runtime, "isVisible", key: [])
+            capture.record(runtime, "isVisible", key: [], returns: Bool.self)
             return Dummies.resolve(Bool.self, for: "MockScreen.isVisible")
         }
         return runtime.invoke("isVisible", key: [])

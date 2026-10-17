@@ -2681,6 +2681,7 @@ These mock files are the exact output the generator must produce; Task 13 compar
   - Async members (methods, and properties with an `async` getter) of a protocol **without** a global actor are prefixed `nonisolated(nonsending) ` (resolved D1). Members of a global-actor protocol get no prefix.
   - Throwing members, while recording: `capture.record(…)`, then one continue line, then `throw CaptureSignal()` (resolved D5). The continue line is `if Capture.continuesAfterRecord { return }` for a `Void` return. For any other return `R`, it is `if Capture.continuesAfterRecord, let placeholder = Dummies.placeholder(<metatype R>[, fallback: <same fallback as non-throwing>]) { return placeholder }`.
   - `effects:` is omitted when empty. One effect is `.throwing` or `.async`; both are `[.async, .throwing]`.
+  - `returns: <metatype R>` follows `effects:` on every `capture.record` for a member with a non-Void return (getters pass the property type, subscript getters the subscript type, using the same metatype spelling as the dummy-resolve line). Void members and setters omit it. `when` compares the closure's type with it and rejects `thenReturn`/`thenAnswer` stubs of another type.
   - The dummy-resolve metatype is written `(any P).self` for `any P` types and `(A, B).self` for tuples; other types are written as-is followed by `.self`.
   - Four-space indentation, no trailing whitespace, and the file ends with one newline.
 

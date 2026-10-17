@@ -9,7 +9,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
 
     func observed() -> Observed {
         if let capture = Capture.current {
-            capture.record(runtime, "observed()", key: [])
+            capture.record(runtime, "observed()", key: [], returns: Observed.self)
             return Dummies.resolve(Observed.self, for: "MockShapes.observed()", fallback: Self._dummyObserved)
         }
         return runtime.invoke("observed()", key: [])
@@ -17,7 +17,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
 
     func pair() -> Pair {
         if let capture = Capture.current {
-            capture.record(runtime, "pair()", key: [])
+            capture.record(runtime, "pair()", key: [], returns: Pair.self)
             return Dummies.resolve(Pair.self, for: "MockShapes.pair()", fallback: Self._dummyPair)
         }
         return runtime.invoke("pair()", key: [])
@@ -25,7 +25,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
 
     func defaults() -> Defaults {
         if let capture = Capture.current {
-            capture.record(runtime, "defaults()", key: [])
+            capture.record(runtime, "defaults()", key: [], returns: Defaults.self)
             return Dummies.resolve(Defaults.self, for: "MockShapes.defaults()", fallback: Self._dummyDefaults)
         }
         return runtime.invoke("defaults()", key: [])
@@ -33,7 +33,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
 
     func payload() -> Payload {
         if let capture = Capture.current {
-            capture.record(runtime, "payload()", key: [])
+            capture.record(runtime, "payload()", key: [], returns: Payload.self)
             return Dummies.resolve(Payload.self, for: "MockShapes.payload()", fallback: Self._dummyPayload)
         }
         return runtime.invoke("payload()", key: [])
@@ -41,7 +41,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
 
     func subBox() -> SubBox {
         if let capture = Capture.current {
-            capture.record(runtime, "subBox()", key: [])
+            capture.record(runtime, "subBox()", key: [], returns: SubBox.self)
             return Dummies.resolve(SubBox.self, for: "MockShapes.subBox()", fallback: Self._dummySubBox)
         }
         return runtime.invoke("subBox()", key: [])

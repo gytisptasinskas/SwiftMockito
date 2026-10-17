@@ -97,8 +97,10 @@ struct MockEmitter {
         case (false, false): ""
         }
         let member = "\(model.mockName).\(identity)"
+        // The recorded return type lets `thenReturn`/`thenAnswer` reject a closure of another type.
+        let returns = returnType.map { ", returns: \(metatype($0))" } ?? ""
         w.block("if let capture = Capture.current") { w in
-            w.line("capture.record(runtime, \"\(identity)\", key: \(key)\(args)\(effects))")
+            w.line("capture.record(runtime, \"\(identity)\", key: \(key)\(args)\(effects)\(returns))")
             if isThrowing {
                 // Resolved D5: inside verifyInOrder, return a placeholder instead of throwing.
                 if let returnType {
