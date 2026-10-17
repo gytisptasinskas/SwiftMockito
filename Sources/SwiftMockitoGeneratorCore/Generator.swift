@@ -25,7 +25,7 @@ public struct GeneratorResult: Sendable {
 
 public enum Generator {
     public static func generate(_ configuration: GeneratorConfiguration) -> GeneratorResult {
-        let index = SourceIndex(configuration.inputs)
+        let index = SourceIndex(configuration.inputs, testModule: configuration.testModule)
         let resolver = ProtocolResolver(index: index)
         var files: [String: String] = [:]
         var diagnostics: [GeneratorDiagnostic] = []
@@ -38,13 +38,15 @@ public enum Generator {
             }
             if !configuration.expectedFiles.isEmpty, !configuration.expectedFiles.contains(fileName) {
                 // The file is still written; the build fails on this error rather than on a missing output.
-                diagnostics.append(.error("\(fileName) was not declared by the build plugin (the marker could not be read by the plugin's scanner); put @GenerateMock(...) on one line without a trailing comma", at: marker))
+                diagnostics.append(.error("\(fileName) was not declared by the build plugin (the marker could not be read by the plugin's scanner); write each argument of @GenerateMock(...) as Name.self, with no comments inside the parentheses", at: marker))
             }
             switch resolver.resolve(marker, testModule: configuration.testModule) {
             case .success(let model):
                 let synthesizer = DummySynthesizer(index: index, model: model, testModule: configuration.testModule)
-                files[fileName] = MockEmitter(model: model, synthesizer: synthesizer).emit()
-                diagnostics += synthesizer.warnings
+                let mock = MockEmitter(model: model, synthesizer: synthesizer).emit()
+                diagnostics += synthesizer.diagnostics
+                let errors = synthesizer.diagnostics.filter { $0.severity == .error }
+                files[fileName] = errors.isEmpty ? mock : failureFile(errors)
             case .failure(let failure):
                 diagnostics += failure.diagnostics
                 files[fileName] = failureFile(failure.diagnostics)
@@ -95,6 +97,18 @@ public enum Generator {
             case "--output": output = value
             case "--marked": marked.append(value)
             case "--expect": expected.append(value)
+            case "--source-list":
+                guard let list = try? String(contentsOfFile: value, encoding: .utf8) else {
+                    stderr("error: cannot read \(value)\n")
+                    return 2
+                }
+                for (number, line) in list.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).enumerated() where !line.isEmpty {
+                    guard let eq = line.firstIndex(of: "=") else {
+                        stderr("error: \(value):\(number + 1): expected Module=path\n")
+                        return 2
+                    }
+                    sources.append((String(line[..<eq]), String(line[line.index(after: eq)...])))
+                }
             case "--source", "--source-dir":
                 guard let eq = value.firstIndex(of: "=") else { return usageError() }
                 let module = String(value[..<eq])
@@ -152,7 +166,8 @@ public enum Generator {
     static let usage = """
         usage: SwiftMockitoGenerator generate --test-module <Module> --output <dir>
                --marked <file.swift>... [--source <Module>=<file.swift>...]
-               [--source-dir <Module>=<dir>...] [--expect <MockName.swift>...]
+               [--source-dir <Module>=<dir>...] [--source-list <file>...]
+               [--expect <MockName.swift>...]
 
         """
 

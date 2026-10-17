@@ -21,18 +21,26 @@ struct ProtocolResolver {
     ]
 
     func resolve(_ marker: Marker, testModule: String) -> Result<MockModel, GeneratorFailure> {
-        guard let root = index.protocolDecl(named: marker.protocolName) else {
+        let lookup = index.protocolDecl(named: marker.protocolName)
+        if let ambiguity = lookup.ambiguity(marker.protocolName) {
+            return .failure(GeneratorFailure(diagnostics: [.error(ambiguity, at: marker)]))
+        }
+        guard let root = lookup.value else {
             return .failure(GeneratorFailure(diagnostics: [.error("\(marker.protocolName): protocol not found in the test target or its dependencies (protocols from binary frameworks are not supported)", at: marker)]))
         }
-        var files: [String] = []
-        let members: [Member]
-        switch collect(root, marker: marker, files: &files) {
-        case .success(let collected): members = collected
+        let collected: Collected
+        switch collect(root, marker: marker) {
+        case .success(let result): collected = result
         case .failure(let failure): return .failure(failure)
+        }
+        // The protocol's own global actor wins; otherwise the mock takes the one its parents agree on.
+        let inheritedActors = Array(Set(collected.globalActors)).sorted()
+        if globalActor(of: root.node) == nil, inheritedActors.count > 1 {
+            return .failure(GeneratorFailure(diagnostics: [.error("\(marker.protocolName): inherited protocols are isolated to different global actors (\(inheritedActors.joined(separator: ", "))); isolate \(marker.protocolName) to one of them", at: marker)]))
         }
 
         let access = accessPrefix(of: root.node)
-        var plain = Set(files.flatMap { index.imports(inFile: $0) }.filter { !$0.hasSuffix("SwiftMockito") })
+        var plain = Set(collected.files.flatMap { index.imports(inFile: $0) }.filter { !$0.hasSuffix("SwiftMockito") })
         plain.insert("import SwiftMockito")
         var imports = plain.sorted()
         if root.input.module != testModule {
@@ -42,29 +50,39 @@ struct ProtocolResolver {
             protocolName: marker.protocolName,
             mockName: "Mock\(marker.protocolName)",
             access: access,
-            globalActor: globalActor(of: root.node),
+            globalActor: globalActor(of: root.node) ?? inheritedActors.first,
             module: root.input.module,
             imports: imports,
-            members: disambiguateOverloads(members),
+            members: disambiguateOverloads(collected.members),
             marker: marker
         ))
     }
 
     /// The requirements of `decl` and its inherited protocols, inherited ones first.
     func members(of decl: IndexedDecl<ProtocolDeclSyntax>, marker: Marker) -> Result<[Member], GeneratorFailure> {
-        var files: [String] = []
-        return collect(decl, marker: marker, files: &files).map(disambiguateOverloads)
+        collect(decl, marker: marker).map { disambiguateOverloads($0.members) }
     }
 
-    private func collect(_ root: IndexedDecl<ProtocolDeclSyntax>, marker: Marker, files: inout [String]) -> Result<[Member], GeneratorFailure> {
+    /// What `collect` gathers from a protocol and its inherited protocols.
+    private struct Collected {
         var members: [Member] = []
+        var files: [String] = []
+        /// Global actors of the inherited protocols, not of the root.
+        var globalActors: [String] = []
+    }
+
+    private func collect(_ root: IndexedDecl<ProtocolDeclSyntax>, marker: Marker) -> Result<Collected, GeneratorFailure> {
+        var collected = Collected()
         var diagnostics: [GeneratorDiagnostic] = []
         var visited: Set<String> = []
 
         func visit(_ decl: IndexedDecl<ProtocolDeclSyntax>) {
             let name = decl.node.name.text
             guard visited.insert(name).inserted else { return }
-            files.append(decl.input.path)
+            collected.files.append(decl.input.path)
+            if name != root.node.name.text, let actor = globalActor(of: decl.node) {
+                collected.globalActors.append(actor)
+            }
             let isObjC = decl.node.attributes.contains { $0.as(AttributeSyntax.self)?.attributeName.trimmedDescription == "objc" }
                 || decl.node.memberBlock.members.contains { item in
                     item.decl.asProtocol(WithModifiersSyntax.self)?.modifiers.contains { $0.name.text == "optional" } == true
@@ -79,22 +97,27 @@ struct ProtocolResolver {
                     diagnostics.append(.error("\(name): Actor-constrained protocols are not supported", at: marker))
                 } else if Self.markerProtocols.contains(parent) {
                     continue
-                } else if let parentDecl = index.protocolDecl(named: parent) {
-                    visit(parentDecl)
                 } else {
-                    diagnostics.append(.error("\(name): inherited protocol \(parent) not found in sources", at: marker))
+                    let lookup = index.protocolDecl(named: parent)
+                    if let ambiguity = lookup.ambiguity(parent) {
+                        diagnostics.append(.error("\(name): inherited protocol \(ambiguity)", at: marker))
+                    } else if let parentDecl = lookup.value {
+                        visit(parentDecl)
+                    } else {
+                        diagnostics.append(.error("\(name): inherited protocol \(parent) not found in sources", at: marker))
+                    }
                 }
             }
             for item in decl.node.memberBlock.members {
                 switch convert(item.decl, protocolName: name, marker: marker) {
-                case .success(let member): members.append(member)
+                case .success(let member): collected.members.append(member)
                 case .failure(let diagnostic): diagnostics.append(diagnostic)
                 }
             }
         }
 
         visit(root)
-        return diagnostics.isEmpty ? .success(members) : .failure(GeneratorFailure(diagnostics: diagnostics))
+        return diagnostics.isEmpty ? .success(collected) : .failure(GeneratorFailure(diagnostics: diagnostics))
     }
 
     private func convert(_ decl: DeclSyntax, protocolName: String, marker: Marker) -> Result<Member, GeneratorDiagnostic> {
@@ -107,7 +130,7 @@ struct ProtocolResolver {
         }
         if decl.is(InitializerDeclSyntax.self) { return unsupported("initializers") }
         if decl.is(AssociatedTypeDeclSyntax.self) { return unsupported("associated types") }
-        if decl.trimmedDescription.range(of: #"\bSelf\b"#, options: .regularExpression) != nil {
+        if decl.tokens(viewMode: .sourceAccurate).contains(where: { $0.tokenKind == .keyword(.Self) }) {
             return unsupported("Self requirements")
         }
 
@@ -121,8 +144,8 @@ struct ProtocolResolver {
                 return .failure(.error("\(protocolName).\(name): rethrows is not supported", at: marker))
             }
             if Self.reservedNames.contains(name) { return collision(protocolName, name, marker) }
-            for p in function.signature.parameterClause.parameters where isNonEscapingClosure(p.type) {
-                return .failure(.error("\(protocolName).\(name): non-escaping closure parameter '\(p.secondName?.text ?? p.firstName.text)' is not supported; mark it @escaping", at: marker))
+            if let failure = checkParameterTypes(function.signature.parameterClause.parameters, member: "\(protocolName).\(name)", marker: marker) {
+                return .failure(failure)
             }
             let returnType = function.signature.returnClause?.type.trimmedDescription
             return .success(.method(Method(
@@ -131,9 +154,7 @@ struct ProtocolResolver {
                 genericParameters: function.genericParameterClause?.parameters.map {
                     GenericParameter(name: $0.name.text, constraint: $0.inheritedType?.trimmedDescription)
                 } ?? [],
-                parameters: function.signature.parameterClause.parameters.enumerated().map { position, p in
-                    parameter(label: p.firstName.text, secondName: p.secondName?.text, type: p.type, isVariadic: p.ellipsis != nil, position: position)
-                },
+                parameters: parameters(function.signature.parameterClause.parameters, isSubscript: false),
                 returnType: (returnType == "Void" || returnType == "()") ? nil : returnType,
                 isAsync: effects?.asyncSpecifier != nil,
                 isThrowing: effects?.throwsClause != nil,
@@ -162,14 +183,12 @@ struct ProtocolResolver {
             if getter?.effectSpecifiers?.asyncSpecifier != nil || getter?.effectSpecifiers?.throwsClause != nil {
                 return unsupported("subscripts with async or throws getters")
             }
+            if let failure = checkParameterTypes(sub.parameterClause.parameters, member: "\(protocolName).subscript", marker: marker) {
+                return .failure(failure)
+            }
             return .success(.subscriptMember(Subscript(
                 identity: "",
-                // Subscript parameters have no external label unless the name is written twice.
-                parameters: sub.parameterClause.parameters.enumerated().map { position, p in
-                    parameter(label: p.secondName == nil ? "_" : p.firstName.text,
-                              secondName: p.secondName?.text ?? p.firstName.text, type: p.type,
-                              isVariadic: p.ellipsis != nil, position: position)
-                },
+                parameters: parameters(sub.parameterClause.parameters, isSubscript: true),
                 returnType: sub.returnClause.type.trimmedDescription,
                 hasSetter: accessorList(sub.accessorBlock).contains { $0.accessorSpecifier.text == "set" }
             )))
@@ -188,18 +207,48 @@ struct ProtocolResolver {
         return .failure(.error("\(protocolName).\(member) collides with SwiftMockito's \(owner)", at: marker))
     }
 
-    private func parameter(label: String, secondName: String?, type: TypeSyntax, isVariadic: Bool, position: Int) -> Parameter {
-        let internalName = secondName ?? label
-        let resolved = resolveTypealias(type)
-        return Parameter(
-            label: label == "_" ? nil : label,
-            name: internalName == "_" || Self.unusableParameterNames.contains(internalName) ? "arg\(position)" : internalName,
-            type: type.trimmedDescription,
-            isClosure: isClosure(resolved),
-            isMetatype: resolved.is(MetatypeTypeSyntax.self),
-            isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1,
-            isVariadic: isVariadic
-        )
+    /// The model of a parameter list. Parameters whose internal name cannot be used in the body get
+    /// `arg<position>`, or the next `arg<n>` that no other parameter uses.
+    private func parameters(_ list: FunctionParameterListSyntax, isSubscript: Bool) -> [Parameter] {
+        func usable(_ name: String) -> Bool { name != "_" && !Self.unusableParameterNames.contains(name) }
+        let names = list.map { p in
+            // Subscript parameters have no external label unless the name is written twice.
+            (label: isSubscript && p.secondName == nil ? "_" : p.firstName.text, name: p.secondName?.text ?? p.firstName.text)
+        }
+        var taken = Set(names.map(\.name).filter(usable))
+        return zip(list, names).enumerated().map { position, entry in
+            let (p, names) = entry
+            var name = names.name
+            if !usable(name) {
+                var n = position
+                while taken.contains("arg\(n)") { n += 1 }
+                name = "arg\(n)"
+                taken.insert(name)
+            }
+            let resolved = resolveTypealias(p.type)
+            return Parameter(
+                label: names.label == "_" ? nil : names.label,
+                name: name,
+                type: p.type.trimmedDescription,
+                isClosure: isClosure(resolved),
+                isMetatype: resolved.is(MetatypeTypeSyntax.self),
+                isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1,
+                isVariadic: p.ellipsis != nil
+            )
+        }
+    }
+
+    /// An error for the first parameter that is a non-escaping closure or names an ambiguous typealias.
+    private func checkParameterTypes(_ list: FunctionParameterListSyntax, member: String, marker: Marker) -> GeneratorDiagnostic? {
+        for p in list {
+            if let ambiguity = ambiguousTypealias(in: p.type) {
+                return .error("\(member): \(ambiguity)", at: marker)
+            }
+            if isNonEscapingClosure(p.type) {
+                return .error("\(member): non-escaping closure parameter '\(p.secondName?.text ?? p.firstName.text)' is not supported; mark it @escaping", at: marker)
+            }
+        }
+        return nil
     }
 
     /// True when the parameter's type is a function type that is not `@escaping`.
@@ -216,8 +265,7 @@ struct ProtocolResolver {
             } else if let tuple = current.as(TupleTypeSyntax.self), tuple.elements.count == 1,
                       let only = tuple.elements.first, only.firstName == nil {
                 current = only.type
-            } else if let identifier = current.as(IdentifierTypeSyntax.self), identifier.genericArgumentClause == nil,
-                      let target = index.typealiasTarget(named: identifier.name.text) {
+            } else if let target = typealiasTarget(of: current).value {
                 current = target
             } else {
                 break
@@ -231,11 +279,36 @@ struct ProtocolResolver {
         var current = type
         for _ in 0..<8 {
             if let attributed = current.as(AttributedTypeSyntax.self) { current = attributed.baseType; continue }
-            if let identifier = current.as(IdentifierTypeSyntax.self), identifier.genericArgumentClause == nil,
-               let target = index.typealiasTarget(named: identifier.name.text) { current = target; continue }
+            if let target = typealiasTarget(of: current).value { current = target; continue }
             break
         }
         return current
+    }
+
+    /// The ambiguity message for a typealias that `resolveTypealias` or `isClosure` would follow, or nil.
+    private func ambiguousTypealias(in type: TypeSyntax) -> String? {
+        var current = type
+        for _ in 0..<8 {
+            if let attributed = current.as(AttributedTypeSyntax.self) { current = attributed.baseType; continue }
+            if let optional = current.as(OptionalTypeSyntax.self) { current = optional.wrappedType; continue }
+            if let iuo = current.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) { current = iuo.wrappedType; continue }
+            if let tuple = current.as(TupleTypeSyntax.self), tuple.elements.count == 1, let only = tuple.elements.first {
+                current = only.type; continue
+            }
+            let lookup = typealiasTarget(of: current)
+            if let identifier = current.as(IdentifierTypeSyntax.self), let ambiguity = lookup.ambiguity(identifier.name.text) {
+                return ambiguity
+            }
+            guard let target = lookup.value else { break }
+            current = target
+        }
+        return nil
+    }
+
+    /// The typealias a plain identifier type names.
+    private func typealiasTarget(of type: TypeSyntax) -> Lookup<TypeSyntax> {
+        guard let identifier = type.as(IdentifierTypeSyntax.self), identifier.genericArgumentClause == nil else { return .missing }
+        return index.typealiasTarget(named: identifier.name.text)
     }
 
     private func isClosure(_ type: TypeSyntax) -> Bool {

@@ -6,13 +6,15 @@ final class DummySynthesizer {
     let model: MockModel
     let testModule: String
     private(set) var helpers: [String] = []
-    private(set) var warnings: [GeneratorDiagnostic] = []
+    /// Warnings for types without a dummy, and errors for type names declared in several modules.
+    private(set) var diagnostics: [GeneratorDiagnostic] = []
 
     /// Why a type has no dummy. Stored with cached results so a type built silently for a
     /// throwing member still warns when a non-throwing member asks for it later.
     private struct Issue: Hashable {
         let type: String
         let reason: String?   // nil: the type is a generic parameter of the member
+        var isAmbiguity = false
     }
 
     /// The outcome of building one type's dummy: the `fallback:` expression and what is missing.
@@ -33,15 +35,15 @@ final class DummySynthesizer {
 
     /// The `fallback:` argument for a type the runtime has no built-in for, or nil.
     /// `warn: false` is used for throwing members' placeholders: no dummy there only
-    /// matters inside `verifyInOrder`, which reports it at runtime.
+    /// matters inside `verifyInOrder`, which reports it at runtime. Ambiguities are errors either way.
     func fallback(for type: String, member: String, genericNames: Set<String>, warn: Bool = true) -> String? {
         let t = type.trimmingCharacters(in: .whitespaces)
         let built = build(t, genericNames: genericNames, key: member)
-        if warn {
-            for issue in built.issues {
-                let diagnostic = GeneratorDiagnostic.warning(message(for: issue, member: member), at: model.marker)
-                if !warnings.contains(diagnostic) { warnings.append(diagnostic) }
-            }
+        for issue in built.issues where warn || issue.isAmbiguity {
+            let diagnostic = issue.isAmbiguity
+                ? GeneratorDiagnostic.error(message(for: issue, member: member), at: model.marker)
+                : GeneratorDiagnostic.warning(message(for: issue, member: member), at: model.marker)
+            if !diagnostics.contains(diagnostic) { diagnostics.append(diagnostic) }
         }
         return built.reference
     }
@@ -50,7 +52,8 @@ final class DummySynthesizer {
         guard let reason = issue.reason else {
             return "\(member): cannot build a dummy for generic return type \(issue.type); call provideDummy(_:) for each concrete \(issue.type) you stub"
         }
-        return "\(member): cannot build a dummy \(issue.type) (\(reason)); call provideDummy(_:) with a \(issue.type) before stubbing or verifying it"
+        if issue.isAmbiguity { return "\(member): cannot build a dummy \(issue.type): \(reason)" }
+        return "\(member): cannot build a dummy \(issue.type) (\(reason)); register one with provideDummy(_:) before stubbing or verifying it"
     }
 
     private func build(_ t: String, genericNames: Set<String>, key: String) -> Built {
@@ -106,7 +109,11 @@ final class DummySynthesizer {
 
     private func buildDeclared(_ t: String) -> Built {
         let name = t.hasPrefix("any ") ? String(t.dropFirst(4)).trimmingCharacters(in: .whitespaces) : t
-        guard let declaration = index.typeDecl(named: name), t == name || isProtocol(declaration) else {
+        let lookup = index.typeDecl(named: name)
+        if let ambiguity = lookup.ambiguity(name) {
+            return Built(issues: [Issue(type: t, reason: ambiguity, isAmbiguity: true)])
+        }
+        guard let declaration = lookup.value, t == name || isProtocol(declaration) else {
             return missing(t, "not declared in sources")
         }
         if let cached = cache[name] { return cached }
@@ -148,6 +155,7 @@ final class DummySynthesizer {
         case .structDecl(let decl): buildStruct(decl, name: name)
         case .enumDecl(let decl): buildEnum(decl.node, name: name)
         case .classDecl(let decl): buildClass(decl, name: name)
+        case .typealiasDecl(let decl): build(decl.node.initializer.value.trimmedDescription, genericNames: [], key: name)
         }
     }
 
@@ -184,12 +192,14 @@ final class DummySynthesizer {
     private enum InitializerChoice {
         case arguments([(label: String?, type: String, key: String)])
         case failure(String)
+        case ambiguity(String)
     }
 
     private func buildClass(_ declaration: IndexedDecl<ClassDeclSyntax>, name: String) -> Built {
         switch classInitializer(declaration, name: name, depth: 0) {
         case .arguments(let arguments): construct(name, arguments: arguments)
         case .failure(let reason): missing(name, reason)
+        case .ambiguity(let reason): Built(issues: [Issue(type: name, reason: reason, isAmbiguity: true)])
         }
     }
 
@@ -219,7 +229,9 @@ final class DummySynthesizer {
         if needsValue { return .failure("no accessible initializer") }
         if let first = decl.inheritanceClause?.inheritedTypes.first?.type.trimmedDescription,
            !Self.protocolsNeverSuperclass.contains(first) {
-            switch index.typeDecl(named: first) {
+            let lookup = index.typeDecl(named: first)
+            if let ambiguity = lookup.ambiguity(first) { return .ambiguity("superclass \(ambiguity)") }
+            switch lookup.value {
             case .classDecl(let superclass)?:
                 // A superclass chain this deep is a cycle.
                 return depth < 16 ? classInitializer(superclass, name: name, depth: depth + 1) : .failure("no accessible initializer")
@@ -352,7 +364,8 @@ final class DummySynthesizer {
         let members: [Member]
         switch ProtocolResolver(index: index).members(of: decl, marker: model.marker) {
         case .success(let resolved): members = resolved
-        case .failure: return missing("any \(name)", "protocol has unsupported requirements")
+        case .failure(let failure):
+            return missing("any \(name)", "protocol has unsupported requirements: " + failure.diagnostics.map(\.message).joined(separator: "; "))
         }
         func trap(_ identity: String) -> String {
             "fatalError(\"SwiftMockito: dummy \(name).\(identity) must not be called\")"

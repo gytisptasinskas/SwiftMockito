@@ -45,7 +45,7 @@ import SwiftMockito
 enum Mocks {}
 ```
 
-The build plugin finds `Client` in your test target's dependencies and generates a `MockClient` class with the same signatures, effects and access level. Protocols declared `internal` need `@testable import` of their module, as above.
+`@SwiftMockito.GenerateMock(…)` works too. The build plugin finds `Client` in your test target's dependencies and generates a `MockClient` class with the same signatures, effects and access level. Protocols declared `internal` need `@testable import` of their module, as above.
 
 The examples below mock this protocol and use it through a `UserRepository`:
 
@@ -79,6 +79,7 @@ swift run SwiftMockitoGenerator generate \
 | `--marked` | A test file that contains `@GenerateMock`. Repeatable. |
 | `--source Module=path` | One source file that declares protocols or dummy types. Repeatable. |
 | `--source-dir Module=path` | Every `.swift` file under a directory. Repeatable. |
+| `--source-list file` | A file with one `Module=path` per line, read like `--source`. The build plugin passes its sources this way so large dependency graphs stay under the command-line length limit. Repeatable. |
 | `--expect MockName.swift` | A file that must exist in the output. If no active marker produces it, a placeholder file is written. A marker that produces a file not listed is an error. Repeatable. |
 
 Exit codes: 0 on success, 1 for generation or write errors, 2 for a usage error or an unreadable input.
@@ -169,7 +170,7 @@ Each `when` or `verify` expression must record exactly one mock call. Zero or se
 
 ### Actors
 
-A mock of a `@MainActor` protocol is stubbed and verified from a `@MainActor` test:
+A mock of a `@MainActor` protocol, or of a protocol that inherits from one, is isolated to the main actor too. It is stubbed and verified from a `@MainActor` test:
 
 ```swift
 @MainActor
@@ -252,7 +253,7 @@ A dummy comes from, in order:
 When the generator cannot build a dummy, it reports a build warning at the `@GenerateMock` declaration. For a protocol with `func size() -> CGSize`:
 
 ```
-warning: MockP.size(): cannot build a dummy CGSize (not declared in sources); call provideDummy(_:) with a CGSize before stubbing or verifying it
+warning: MockP.size(): cannot build a dummy CGSize (not declared in sources); register one with provideDummy(_:) before stubbing or verifying it
 ```
 
 Register one before you stub or verify that member. The registry is process-wide and holds immutable values:
@@ -278,6 +279,7 @@ If a non-throwing member is recorded and no dummy exists for its return type, Sw
 - Objective-C protocols (`@objc`, or `optional` requirements).
 - Members named `runtime` or `arg`, which collide with names the generated mock uses. Parameters named `arg` are fine.
 - `Actor`-constrained protocols (`protocol P: Actor`).
+- Protocols that declare no global actor but inherit different ones from their parents.
 - Class mocking, and protocols available only in binary frameworks.
 - The Objective-C runtime, swizzling and reflection-based dispatch.
 
@@ -287,7 +289,7 @@ If a non-throwing member is recorded and no dummy exists for its return type, Sw
 - Mocks of global-actor protocols are stubbed and verified from tests isolated to that actor.
 - `thenAnswer` bodies run, and `thenReturn` values are handed over, on whatever thread or actor the code under test calls the mock from. Don't touch actor-isolated test state from an answer.
 - A `when` closure must evaluate to the member's own return type. Wrapping the call in `try?`, `??` or a conversion is reported at the `when`, and no stub is installed.
-- Very large dependency graphs (thousands of source files) can exceed the command-line length limit when the plugin passes them to the generator.
+- The generator looks up protocols, inherited protocols, typealiases and dummy types by name. A name declared in more than one dependency module is an error at the marker; rename one of them. A declaration in the test module itself shadows the others.
 - Non-escaping closure parameters are not supported. The generator reports an error at the marker; mark the parameter `@escaping`.
 - `thenAnswer` closures with callback parameters need annotated parameter types.
 - `provideDummy` registers by exact type: use `provideDummy(Sub() as Base)` for a `Base` return.

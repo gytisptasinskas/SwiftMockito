@@ -29,6 +29,44 @@ private func makeTempDirectory() throws -> URL {
         #expect(written == golden)
     }
 
+    @Test func sourceListReadsOneModuleAndPathPerLine() throws {
+        let dir = try makeTempDirectory()
+        let marked = dir.appending(path: "Mocks.swift")
+        try "@GenerateMock(Client.self)\nenum Mocks {}\n".write(to: marked, atomically: true, encoding: .utf8)
+        let list = dir.appending(path: "sources.txt")
+        let paths = ["Client.swift", "Catalog.swift"].map { "SwiftMockitoTests=\(fixtures.appending(path: $0).path)" }
+        try (paths.joined(separator: "\r\n") + "\n\n").write(to: list, atomically: true, encoding: .utf8)
+        let out = dir.appending(path: "out")
+
+        var errors = ""
+        let code = Generator.run(arguments: [
+            "generate", "--test-module", "SwiftMockitoTests", "--output", out.path,
+            "--marked", marked.path, "--source-list", list.path,
+        ], stderr: { errors += $0 })
+
+        #expect(code == 0)
+        #expect(errors.isEmpty)
+        let written = try String(contentsOf: out.appending(path: "MockClient.swift"), encoding: .utf8)
+        let golden = try String(contentsOf: fixtures.appending(path: "MockClient.swift"), encoding: .utf8)
+        #expect(written == golden)
+    }
+
+    @Test func malformedOrUnreadableSourceListIsAUsageError() throws {
+        let dir = try makeTempDirectory()
+        let list = dir.appending(path: "sources.txt")
+        try "App=/a.swift\n/b.swift\n".write(to: list, atomically: true, encoding: .utf8)
+        var errors = ""
+        #expect(Generator.run(arguments: ["generate", "--test-module", "T", "--output", dir.path, "--source-list", list.path],
+                              stderr: { errors += $0 }) == 2)
+        #expect(errors == "error: \(list.path):2: expected Module=path\n")
+
+        errors = ""
+        let missing = dir.appending(path: "nope.txt").path
+        #expect(Generator.run(arguments: ["generate", "--test-module", "T", "--output", dir.path, "--source-list", missing],
+                              stderr: { errors += $0 }) == 2)
+        #expect(errors == "error: cannot read \(missing)\n")
+    }
+
     @Test func generationErrorReturnsOne() throws {
         let dir = try makeTempDirectory()
         let marked = dir.appending(path: "Mocks.swift")

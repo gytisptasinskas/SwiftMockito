@@ -12,7 +12,7 @@ private func generateP(_ source: String) -> GeneratorResult {
     @Test func sdkTypeWithoutBuiltInWarnsAtMarker() {
         let result = generateP("import CoreGraphics\nprotocol P { func size() -> CGSize }")
         #expect(result.diagnostics == [GeneratorDiagnostic(severity: .warning,
-            message: "MockP.size(): cannot build a dummy CGSize (not declared in sources); call provideDummy(_:) with a CGSize before stubbing or verifying it",
+            message: "MockP.size(): cannot build a dummy CGSize (not declared in sources); register one with provideDummy(_:) before stubbing or verifying it",
             path: "/t/M.swift", line: 1, column: 1)])
         #expect(result.files["MockP.swift"]?.contains("Dummies.resolve(CGSize.self, for: \"MockP.size()\")") == true)
     }
@@ -29,7 +29,7 @@ private func generateP(_ source: String) -> GeneratorResult {
 
     @Test func privateInitOnlyWarns() {
         #expect(generateP("struct S { private init() {} }\nprotocol P { func s() -> S }").diagnostics.map(\.message) == [
-            "MockP.s(): cannot build a dummy S (no accessible initializer); call provideDummy(_:) with a S before stubbing or verifying it"
+            "MockP.s(): cannot build a dummy S (no accessible initializer); register one with provideDummy(_:) before stubbing or verifying it"
         ])
     }
 
@@ -49,14 +49,14 @@ private func generateP(_ source: String) -> GeneratorResult {
 
     @Test func enumWithoutCasesWarns() {
         #expect(generateP("enum Empty {}\nprotocol P { func e() -> Empty }").diagnostics.map(\.message) == [
-            "MockP.e(): cannot build a dummy Empty (enum has no cases); call provideDummy(_:) with a Empty before stubbing or verifying it"
+            "MockP.e(): cannot build a dummy Empty (enum has no cases); register one with provideDummy(_:) before stubbing or verifying it"
         ])
     }
 
     @Test func recursiveTypeWarns() {
         let result = generateP("struct A { let b: B }\nstruct B { let a: A }\nprotocol P { func a() -> A }")
         #expect(result.diagnostics.map(\.message) == [
-            "MockP.a(): cannot build a dummy A (recursive type); call provideDummy(_:) with a A before stubbing or verifying it"
+            "MockP.a(): cannot build a dummy A (recursive type); register one with provideDummy(_:) before stubbing or verifying it"
         ])
     }
 
@@ -68,7 +68,7 @@ private func generateP(_ source: String) -> GeneratorResult {
         let types = "import CoreGraphics\nstruct S { let size: CGSize }\n"
         #expect(generateP(types + "protocol P { func s() throws -> S }").diagnostics.isEmpty)
         #expect(generateP(types + "protocol P { func a() throws -> S\n func b() -> S }").diagnostics.map(\.message) == [
-            "MockP.b(): cannot build a dummy CGSize (not declared in sources); call provideDummy(_:) with a CGSize before stubbing or verifying it"
+            "MockP.b(): cannot build a dummy CGSize (not declared in sources); register one with provideDummy(_:) before stubbing or verifying it"
         ])
     }
 
@@ -93,7 +93,7 @@ private func generateP(_ source: String) -> GeneratorResult {
 
     @Test func sdkSuperclassWarns() {
         #expect(generateP("import AppKit\nfinal class V: NSView {}\nprotocol P { func v() -> V }").diagnostics.map(\.message) == [
-            "MockP.v(): cannot build a dummy V (superclass NSView not declared in sources); call provideDummy(_:) with a V before stubbing or verifying it"
+            "MockP.v(): cannot build a dummy V (superclass NSView not declared in sources); register one with provideDummy(_:) before stubbing or verifying it"
         ])
     }
 
@@ -110,7 +110,7 @@ private func generateP(_ source: String) -> GeneratorResult {
     @Test func publicProtocolNeedsPublicInitializerFromOtherModule() {
         let source = "public struct S { public let id: Int }\npublic protocol P { func s() -> S }"
         #expect(generateP(source).diagnostics.map(\.message) == [
-            "MockP.s(): cannot build a dummy S (no initializer accessible from T); call provideDummy(_:) with a S before stubbing or verifying it"
+            "MockP.s(): cannot build a dummy S (no initializer accessible from T); register one with provideDummy(_:) before stubbing or verifying it"
         ])
     }
 
@@ -128,7 +128,7 @@ private func generateP(_ source: String) -> GeneratorResult {
     @Test func privateStoredPropertyWithoutDefaultHidesTheMemberwiseInitializer() throws {
         let result = generateP("struct S4 { var a: Int; private var d: Int }\nprotocol P { func s() -> S4 }")
         #expect(result.diagnostics.map(\.message) == [
-            "MockP.s(): cannot build a dummy S4 (no accessible initializer); call provideDummy(_:) with a S4 before stubbing or verifying it"
+            "MockP.s(): cannot build a dummy S4 (no accessible initializer); register one with provideDummy(_:) before stubbing or verifying it"
         ])
         #expect(try #require(result.files["MockP.swift"]).contains("_dummyS4") == false)
     }
@@ -150,5 +150,35 @@ private func generateP(_ source: String) -> GeneratorResult {
         let result = generateP("struct S3 { var a: Int; private(set) var b: Int }\nprotocol P { func s() -> S3 }")
         #expect(result.diagnostics.isEmpty)
         #expect(try #require(result.files["MockP.swift"]).contains("S3(a: Dummies.resolve(Int.self, for: \"S3.a\"), b: Dummies.resolve(Int.self, for: \"S3.b\"))"))
+    }
+
+    @Test func protocolDummyWarningNamesTheUnsupportedRequirement() {
+        #expect(generateP("protocol L { static func make() -> Int }\nprotocol P { func l() -> any L }").diagnostics.map(\.message) == [
+            "MockP.l(): cannot build a dummy any L (protocol has unsupported requirements: L: static requirements are not supported); register one with provideDummy(_:) before stubbing or verifying it"
+        ])
+    }
+
+    @Test func typealiasReturnTypeUsesTheAliasedTypesDummy() throws {
+        let result = generateP("typealias Handler = (Int) -> Void\ntypealias Box = S\nstruct S { let id: Int }\nprotocol P { func h() -> Handler; func b() -> Box }")
+        #expect(result.diagnostics.isEmpty)
+        let file = try #require(result.files["MockP.swift"])
+        #expect(file.contains("return Dummies.resolve(Handler.self, for: \"MockP.h()\", fallback: { { _ in fatalError("))
+        #expect(file.contains("return Dummies.resolve(Box.self, for: \"MockP.b()\", fallback: Self._dummyS)"))
+    }
+
+    @Test(arguments: [
+        ("struct S { let id: Int }", "MockP.s(): cannot build a dummy S: S is declared in more than one module (App, Other); rename one of them"),
+        ("class B { init() {} }\nfinal class S: B {}", "MockP.s(): cannot build a dummy S: superclass B is declared in more than one module (App, Other); rename one of them"),
+    ])
+    func typeDeclaredInTwoModulesIsAnAmbiguityError(app: String, message: String) {
+        let other = app.hasPrefix("class") ? "class B { init(x: Int) {} }" : "struct S { let name: String }"
+        let marker = SourceInput(path: "/t/M.swift", module: "T", text: "@GenerateMock(P.self)\nenum M {}\n")
+        let result = Generator.generate(GeneratorConfiguration(markedPaths: [marker.path], inputs: [
+            marker,
+            SourceInput(path: "/a/P.swift", module: "App", text: app + "\nprotocol P { func s() throws -> S }"),
+            SourceInput(path: "/o/S.swift", module: "Other", text: other),
+        ], testModule: "T", outputDirectory: "/x"))
+        #expect(result.diagnostics == [GeneratorDiagnostic(severity: .error, message: message, path: "/t/M.swift", line: 1, column: 1)])
+        #expect(result.files["MockP.swift"]?.contains("#error(") == true)
     }
 }

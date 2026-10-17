@@ -14,6 +14,13 @@ func resolve(_ source: String, marker index: Int = 0) -> Result<MockModel, Gener
     return ProtocolResolver(index: idx).resolve(idx.markers(in: ["/t/Mocks.swift"])[index], testModule: "AppTests")
 }
 
+/// Resolves the first marker in `markerFile` against several modules' sources.
+func resolve(modules: [(module: String, text: String)], testModule: String = "AppTests") -> Result<MockModel, GeneratorFailure> {
+    let inputs = modules.enumerated().map { SourceInput(path: "/\($0.offset)/S.swift", module: $0.element.module, text: $0.element.text) }
+    let idx = SourceIndex([markerFile] + inputs, testModule: testModule)
+    return ProtocolResolver(index: idx).resolve(idx.markers(in: ["/t/Mocks.swift"])[0], testModule: testModule)
+}
+
 func methods(_ model: MockModel) -> [Method] {
     model.members.compactMap { if case .method(let m) = $0 { m } else { nil } }
 }
@@ -225,5 +232,104 @@ func methods(_ model: MockModel) -> [Method] {
     @Test func diagnosticFormat() {
         let d = GeneratorDiagnostic(severity: .warning, message: "m", path: "/t/M.swift", line: 4, column: 1)
         #expect(d.description == "/t/M.swift:4:1: warning: m")
+    }
+
+    @Test func protocolDeclaredInTwoModulesIsAnAmbiguityError() {
+        guard case .failure(let failure) = resolve(modules: [("App", "protocol Client { func f() }"), ("Kit", "protocol Client { func g() }")]) else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics == [GeneratorDiagnostic(severity: .error,
+            message: "Client is declared in more than one module (App, Kit); rename one of them", path: "/t/Mocks.swift", line: 4, column: 1)])
+    }
+
+    @Test func inheritedProtocolDeclaredInTwoModulesIsAnAmbiguityError() {
+        guard case .failure(let failure) = resolve(modules: [("App", "protocol Client: Base {}\nprotocol Base {}"), ("Kit", "protocol Base {}")]) else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics.map(\.message) == ["Client: inherited protocol Base is declared in more than one module (App, Kit); rename one of them"])
+    }
+
+    @Test func typealiasDeclaredInTwoModulesIsAnAmbiguityError() {
+        let result = resolve(modules: [
+            ("App", "typealias Done = () -> Void\nprotocol Client { func run(done: @escaping Done); subscript(key: Done?) -> Int { get } }"),
+            ("Kit", "typealias Done = (Int) -> Void"),
+        ])
+        guard case .failure(let failure) = result else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == [
+            "Client.run: Done is declared in more than one module (App, Kit); rename one of them",
+            "Client.subscript: Done is declared in more than one module (App, Kit); rename one of them",
+        ])
+    }
+
+    @Test func sameNameOfAnotherKindIsNotAmbiguous() throws {
+        let model = try resolve(modules: [("App", "protocol Client { func f(_ user: User) }"), ("Kit", "struct Client {}\nstruct User {}"), ("Net", "struct User {}")]).get()
+        #expect(methods(model).map(\.name) == ["f"])
+    }
+
+    @Test func testModuleDeclarationShadowsImportedOnes() throws {
+        let model = try resolve(modules: [("AppTests", "protocol Client { func own() }"), ("App", "protocol Client { func imported() }")]).get()
+        #expect(methods(model).map(\.name) == ["own"])
+        #expect(model.imports == ["import SwiftMockito"])
+    }
+
+    @Test func globalActorIsInheritedFromAParentProtocol() throws {
+        let model = try resolve("@MainActor protocol Root {}\nprotocol Base: Root {}\nprotocol Client: Base { func f() }").get()
+        #expect(model.globalActor == "MainActor")
+    }
+
+    @Test func ownGlobalActorWinsOverInheritedOnes() throws {
+        let model = try resolve("@MainActor protocol A {}\n@DataActor protocol B {}\n@DataActor protocol Client: A, B {}").get()
+        #expect(model.globalActor == "DataActor")
+    }
+
+    @Test func conflictingInheritedGlobalActorsAreAnError() {
+        guard case .failure(let failure) = resolve("@MainActor protocol A {}\n@DataActor protocol B {}\nprotocol Client: A, B {}") else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics.map(\.message) == ["Client: inherited protocols are isolated to different global actors (DataActor, MainActor); isolate Client to one of them"])
+    }
+
+    @Test func selfInTriviaOrIdentifiersIsNotASelfRequirement() throws {
+        let model = try resolve("""
+            protocol Client {
+                /// Returns Self-describing text.
+                func describe(selfish: Int) -> String // not Self
+                func label(_ text: String) -> String
+            }
+            """).get()
+        #expect(methods(model).map(\.name) == ["describe", "label"])
+        guard case .failure = resolve("protocol Client { func same(_ other: Self) -> Bool }") else { Issue.record("expected failure"); return }
+        guard case .failure = resolve("protocol Client { var parent: Self? { get } }") else { Issue.record("expected failure"); return }
+    }
+
+    @Test func qualifiedMarkerAttributeIsFound() {
+        let file = SourceInput(path: "/m", module: "T", text: "@SwiftMockito.GenerateMock(Client.self)\nenum Mocks {}\n@Other.GenerateMock(Catalog.self)\nenum Others {}\n")
+        #expect(SourceIndex([file]).markers(in: ["/m"]).map(\.protocolName) == ["Client"])
+    }
+
+    @Test func nonEscapingClosureInASubscriptIsAnError() {
+        guard case .failure(let failure) = resolve("typealias Done = () -> Void\nprotocol Client { subscript(key: Int, done: Done) -> Int { get } }") else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics.map(\.message) == ["Client.subscript: non-escaping closure parameter 'done' is not supported; mark it @escaping"])
+    }
+
+    @Test func escapingAndOptionalClosuresInASubscriptAreAccepted() throws {
+        let model = try resolve("protocol Client { subscript(a: @escaping () -> Void, b: (() -> Void)?) -> Int { get } }").get()
+        #expect(model.members.count == 1)
+    }
+
+    @Test func renamedParametersGetUnusedInternalNames() throws {
+        let model = try resolve("""
+            protocol Client {
+                func f(arg: Int, arg0: Int)
+                func g(_: Int, arg1: Int, for: Int, _: Int)
+                subscript(arg: Int, arg0: Int) -> Int { get }
+            }
+            """).get()
+        #expect(methods(model)[0].parameters.map(\.name) == ["arg1", "arg0"])
+        #expect(methods(model)[1].parameters.map(\.name) == ["arg0", "arg1", "arg2", "arg3"])
+        guard case .subscriptMember(let s) = model.members[2] else { Issue.record("subscript"); return }
+        #expect(s.parameters.map(\.name) == ["arg1", "arg0"])
     }
 }

@@ -61,4 +61,12 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
         }
         return runtime.invoke("process(arg:)", key: [arg(arg0)], args: arg0)
     }
+
+    func combine(arg arg1: Int, arg0: Int) -> Int {
+        if let capture = Capture.current {
+            capture.record(runtime, "combine(arg:arg0:)", key: [arg(arg1), arg(arg0)], args: arg1, arg0, returns: Int.self)
+            return Dummies.resolve(Int.self, for: "MockEdge.combine(arg:arg0:)")
+        }
+        return runtime.invoke("combine(arg:arg0:)", key: [arg(arg1), arg(arg0)], args: arg1, arg0)
+    }
 }

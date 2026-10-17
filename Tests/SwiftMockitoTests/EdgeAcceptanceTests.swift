@@ -36,4 +36,11 @@ import Testing
         #expect(edge.process(arg: 3) == 9)
         verify(edge.process(arg: 3)).called(1)
     }
+
+    @Test func renamedParameterDoesNotCollideWithAnotherParameter() {
+        when(edge.combine(arg: 1, arg0: 2)).thenReturn(3)
+        #expect(edge.combine(arg: 1, arg0: 2) == 3)
+        verify(edge.combine(arg: 1, arg0: 2)).called(1)
+        verifyNever(edge.combine(arg: 2, arg0: 1))
+    }
 }

@@ -27,18 +27,27 @@ func commands(tool: URL, workDirectory: URL, testModule: String, marked: [URL],
     let names = Set(try marked.flatMap { MarkerScanner.protocolNames(in: try String(contentsOf: $0, encoding: .utf8)) }).sorted()
     guard !names.isEmpty else { return [] }
     let output = workDirectory.appending(path: "GeneratedMocks")
-    var arguments = ["generate", "--test-module", testModule, "--output", output.path]
+    // Thousands of dependency files would exceed the command-line length limit as `--source` flags.
+    let sourceList = workDirectory.appending(path: "Sources-\(testModule).txt")
+    let listed = sources.map { "\($0.module)=\($0.url.path)\n" }.joined()
+    if (try? String(contentsOf: sourceList, encoding: .utf8)) != listed {
+        try FileManager.default.createDirectory(at: workDirectory, withIntermediateDirectories: true)
+        try listed.write(to: sourceList, atomically: true, encoding: .utf8)
+    }
+    var arguments = ["generate", "--test-module", testModule, "--output", output.path, "--source-list", sourceList.path]
     for url in marked { arguments += ["--marked", url.path] }
-    for (module, url) in sources { arguments += ["--source", "\(module)=\(url.path)"] }
-    for name in names { arguments += ["--expect", "Mock\(name).swift"] }
+    for name in names { arguments += ["--expect", mockFileName(name)] }
     return [.buildCommand(
         displayName: "SwiftMockito: generating \(names.count) mock(s) for \(testModule)",
         executable: tool,
         arguments: arguments,
         inputFiles: marked + sources.map(\.url),
-        outputFiles: names.map { output.appending(path: "Mock\($0).swift") }
+        outputFiles: names.map { output.appending(path: mockFileName($0)) }
     )]
 }
+
+/// The file the generator writes for a marked protocol.
+private func mockFileName(_ protocolName: String) -> String { "Mock\(protocolName).swift" }
 
 #if canImport(XcodeProjectPlugin)
 import XcodeProjectPlugin

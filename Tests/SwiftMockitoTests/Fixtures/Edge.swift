@@ -6,4 +6,5 @@ protocol Edge {
     var transform: ((String) -> String)? { get }
     func legacy() -> String!
     func process(arg: Int) -> Int
+    func combine(arg: Int, arg0: Int) -> Int
 }
