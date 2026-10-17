@@ -30,7 +30,7 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
-    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) async -> R {
+    nonisolated(nonsending) public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) async -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value):
             return value
@@ -57,7 +57,7 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
-    public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) async throws -> R {
+    nonisolated(nonsending) public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) async throws -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value): return value
         case .answer(let answer): return try await run(answer, (repeat each args))
@@ -127,7 +127,7 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
-    private func run<R>(_ answer: StoredAnswer, _ packed: Any) async throws -> R {
+    nonisolated(nonsending) private func run<R>(_ answer: StoredAnswer, _ packed: Any) async throws -> R {
         if let async = answer.async { return try await async(packed) as! R }
         return try answer.sync!(packed) as! R
     }

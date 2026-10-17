@@ -12,6 +12,10 @@ private struct Reentrant: Equatable {
     }
 }
 
+/// Non-`Sendable` and reachable only from the main actor, so passing it onward must stay on that actor.
+private final class PlainBox { var n = 0 }
+private enum MainActorBoxes { @MainActor static let shared = PlainBox() }
+
 @Suite struct RuntimeTests {
     let mock = Harness()
     var runtime: MockRuntime { mock.runtime }
@@ -81,6 +85,21 @@ private struct Reentrant: Equatable {
         let done: (String) -> Void = { box.append($0) }
         try await runtime.invokeThrowing("fetch(id:done:)", key: [arg("1")], args: "1", done) as Void
         #expect(box.messages == ["1"])
+    }
+
+    @MainActor @Test func asyncDispatchAcceptsNonSendableArgumentFromActor() async throws {
+        let box = MainActorBoxes.shared
+        box.n = 0
+        stub(runtime, "put(_:)", key: [arg(box)], argumentTypes: PlainBox.self,
+             effects: [.async, .throwing], returning: Void.self)
+            .thenAnswer { (box: PlainBox) async throws in box.n += 1 }
+        try await runtime.invokeThrowing("put(_:)", key: [arg(box)], args: box) as Void
+        #expect(box.n == 1)
+        stub(runtime, "get(_:)", key: [arg(box)], argumentTypes: PlainBox.self,
+             effects: .async, returning: Int.self)
+            .thenAnswer { (box: PlainBox) async in box.n }
+        let value: Int = await runtime.invoke("get(_:)", key: [arg(box)], args: box)
+        #expect(value == 1)
     }
 
     @Test func throwingCallbackAnswerStillThrows() {

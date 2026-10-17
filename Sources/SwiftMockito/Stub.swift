@@ -23,7 +23,7 @@ struct StoredAnswer {
     let argumentsType: Any.Type
     let isAsync: Bool
     let sync: ((Any) throws -> Any)?
-    let async: ((Any) async throws -> Any)?
+    let async: (nonisolated(nonsending) (Any) async throws -> Any)?
 }
 
 enum StoredResponse {
@@ -62,8 +62,8 @@ public struct Stub<R, Failure: Error> {
     @discardableResult
     public func thenAnswer<each A>(_ body: @escaping (repeat each A) async throws(Failure) -> R) -> Self {
         install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: true, sync: nil, async: { packed in
-            let args = packed as! (repeat each A)
-            return try await body(repeat each args)
+            let args = UncheckedSendable(packed as! (repeat each A))
+            return try await body(repeat each args.value)
         }))
     }
 
@@ -99,8 +99,8 @@ extension Stub where Failure == any Error {
     @discardableResult
     public func thenAnswer<each A>(_ body: @escaping (repeat each A) async -> R) -> Self {
         install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: true, sync: nil, async: { packed in
-            let args = packed as! (repeat each A)
-            return await body(repeat each args)
+            let args = UncheckedSendable(packed as! (repeat each A))
+            return await body(repeat each args.value)
         }))
     }
 
@@ -121,4 +121,12 @@ extension Stub where Failure == any Error {
 func parenthesized(_ type: Any.Type) -> String {
     let name = String(reflecting: type).replacingOccurrences(of: "Swift.", with: "")
     return name.hasPrefix("(") ? name : "(\(name))"
+}
+
+/// Carries a stub's arguments to the user's `@concurrent` async answer. The answer closure is the
+/// user's own code, and a mock call is expected to hand its arguments to it, so the usual
+/// non-`Sendable` check is waived here rather than leaking into every async answer signature.
+private struct UncheckedSendable<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
 }
