@@ -33,6 +33,10 @@ Once the package is published, replace the path dependency with `.package(url: "
 
 In an Xcode project, add the package, add `SwiftMockitoPlugin` under the test target's Build Phases > Run Build Tool Plug-ins, and link `SwiftMockito` to the test target. See [docs/xcode-plugin-verification.md](docs/xcode-plugin-verification.md) for the step-by-step setup. The first build asks you to trust the SwiftMockito macro and plugin; choose Trust & Enable. On CI, pass `-skipMacroValidation -skipPackagePluginValidation` to `xcodebuild`.
 
+## Example app
+
+[`example/`](example/README.md) is a small SwiftUI app built with MVVM on top of the JSONPlaceholder API. Its view models are tested against a generated mock. Open `example/app.xcodeproj` and press ⌘U.
+
 ## Generating mocks
 
 Mark the protocols you want to mock in a test file:
