@@ -30,4 +30,10 @@ import Testing
         when(edge.legacy()).thenReturn("l")
         #expect(edge.legacy() == "l")
     }
+
+    @Test func parameterNamedArgKeepsItsLabel() {
+        when(edge.process(arg: 3)).thenReturn(9)
+        #expect(edge.process(arg: 3) == 9)
+        verify(edge.process(arg: 3)).called(1)
+    }
 }

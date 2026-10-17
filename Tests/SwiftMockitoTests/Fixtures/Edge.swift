@@ -5,4 +5,5 @@ protocol Edge {
     func handler() -> (Int) -> Void
     var transform: ((String) -> String)? { get }
     func legacy() -> String!
+    func process(arg: Int) -> Int
 }

@@ -154,6 +154,19 @@ func methods(_ model: MockModel) -> [Method] {
         #expect(failure.diagnostics.map(\.message) == ["Client.runtime collides with SwiftMockito's Mock.runtime"])
     }
 
+    @Test(arguments: ["func arg(_ x: Int)", "var arg: Int { get }"])
+    func memberNamedArgCollides(requirement: String) {
+        guard case .failure(let failure) = resolve("protocol Client { \(requirement) }") else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == ["Client.arg collides with SwiftMockito's arg(_:)"])
+    }
+
+    @Test func parameterNamedArgGetsAPositionalInternalName() throws {
+        let model = try resolve("protocol Client { func process(arg: Int, other: Int) }").get()
+        let parameters = methods(model)[0].parameters
+        #expect(parameters.map(\.label) == ["arg", "other"])
+        #expect(parameters.map(\.name) == ["arg0", "other"])
+    }
+
     @Test func globalActorAndAccessAreCarried() throws {
         let model = try resolve("@MainActor public protocol Client { func f() }").get()
         #expect(model.globalActor == "MainActor")

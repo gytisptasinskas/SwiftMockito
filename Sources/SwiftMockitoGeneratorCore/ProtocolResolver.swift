@@ -5,7 +5,7 @@ struct ProtocolResolver {
     let index: SourceIndex
 
     /// Names of `Mock` members that a protocol requirement must not reuse.
-    static let reservedNames: Set<String> = ["runtime"]
+    static let reservedNames: Set<String> = ["runtime", "arg"]
     /// Inherited protocols that add no requirements for the mock to implement.
     static let markerProtocols: Set<String> = ["Sendable", "AnyObject", "SendableMetatype"]
     /// Parameter names that cannot be used as bare identifiers in the generated body, or that
@@ -17,7 +17,7 @@ struct ProtocolResolver {
         "repeat", "break", "continue", "fallthrough", "guard", "defer", "static", "public", "private",
         "internal", "fileprivate", "open", "inout", "Any", "associatedtype", "typealias", "catch", "rethrows",
         "throws",
-        "runtime", "capture", "placeholder", "newValue",
+        "runtime", "capture", "placeholder", "newValue", "arg",
     ]
 
     func resolve(_ marker: Marker, testModule: String) -> Result<MockModel, GeneratorFailure> {
@@ -170,7 +170,8 @@ struct ProtocolResolver {
     }
 
     private func collision(_ protocolName: String, _ member: String, _ marker: Marker) -> Result<Member, GeneratorDiagnostic> {
-        .failure(.error("\(protocolName).\(member) collides with SwiftMockito's Mock.\(member)", at: marker))
+        let owner = member == "arg" ? "arg(_:)" : "Mock.\(member)"
+        return .failure(.error("\(protocolName).\(member) collides with SwiftMockito's \(owner)", at: marker))
     }
 
     private func parameter(label: String, secondName: String?, type: TypeSyntax, isVariadic: Bool, position: Int) -> Parameter {

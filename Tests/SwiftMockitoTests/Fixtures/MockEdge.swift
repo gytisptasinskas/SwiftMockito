@@ -53,4 +53,12 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
         }
         return runtime.invoke("legacy()", key: [])
     }
+
+    func process(arg arg0: Int) -> Int {
+        if let capture = Capture.current {
+            capture.record(runtime, "process(arg:)", key: [arg(arg0)], args: arg0)
+            return Dummies.resolve(Int.self, for: "MockEdge.process(arg:)")
+        }
+        return runtime.invoke("process(arg:)", key: [arg(arg0)], args: arg0)
+    }
 }
