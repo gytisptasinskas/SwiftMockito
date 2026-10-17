@@ -1,3 +1,4 @@
+import SwiftParser
 import SwiftSyntax
 
 final class DummySynthesizer {
@@ -18,6 +19,11 @@ final class DummySynthesizer {
     func fallback(for type: String, member: String, genericNames: Set<String>, warn: Bool = true) -> String? {
         let t = type.trimmingCharacters(in: .whitespaces)
         if BuiltIns.covers(t) { return nil }
+        if let function = functionType(t) {
+            let parameters = Array(repeating: "_", count: function.parameters.count).joined(separator: ", ")
+            let signature = parameters.isEmpty ? "" : "\(parameters) in "
+            return "{ { \(signature)fatalError(\"SwiftMockito: dummy closure must not be called\") } }"
+        }
         guard case .structDecl(let decl)? = index.typeDecl(named: t) else { return nil }
         let name = "_dummy\(t)"
         if built.insert(name).inserted {
@@ -27,6 +33,23 @@ final class DummySynthesizer {
             helpers.append("private static func \(name)() -> \(t) {\n    \(t)(\(arguments.joined(separator: ", ")))\n}")
         }
         return "Self.\(name)"
+    }
+
+    /// The function type `type` spells, ignoring parentheses and attributes, or nil.
+    private func functionType(_ type: String) -> FunctionTypeSyntax? {
+        let tree = Parser.parse(source: "typealias Probe = \(type)")
+        guard var current = tree.statements.first?.item.as(TypeAliasDeclSyntax.self)?.initializer.value else { return nil }
+        for _ in 0..<8 {
+            if let attributed = current.as(AttributedTypeSyntax.self) {
+                current = attributed.baseType
+            } else if let tuple = current.as(TupleTypeSyntax.self), tuple.elements.count == 1,
+                      let only = tuple.elements.first, only.firstName == nil {
+                current = only.type
+            } else {
+                break
+            }
+        }
+        return current.as(FunctionTypeSyntax.self)
     }
 
     /// Stored properties that the memberwise initializer takes, in declaration order.

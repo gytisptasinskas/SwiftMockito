@@ -1,4 +1,6 @@
 import Foundation
+import SwiftParser
+import SwiftSyntax
 import Testing
 @testable import SwiftMockitoGeneratorCore
 
@@ -8,7 +10,7 @@ let fixtures = URL(filePath: #filePath).deletingLastPathComponent()
 
 /// Every fixture protocol file that exists so far (Store arrives in Task 14).
 func fixtureInputs() -> [SourceInput] {
-    ["Client.swift", "Catalog.swift", "Screen.swift", "Feed.swift", "Store.swift"].compactMap { name in
+    ["Client.swift", "Catalog.swift", "Screen.swift", "Feed.swift", "Edge.swift", "Store.swift"].compactMap { name in
         let url = fixtures.appending(path: name)
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return SourceInput(path: url.path, module: "SwiftMockitoTests", text: text)
@@ -24,7 +26,7 @@ func generate(marking names: [String], module: String = "SwiftMockitoTests") -> 
 }
 
 @Suite struct SnapshotTests {
-    @Test(arguments: ["Client", "Catalog", "Screen", "Feed"])
+    @Test(arguments: ["Client", "Catalog", "Screen", "Feed", "Edge"])
     func generatorReproducesGolden(protocolName: String) throws {
         let result = generate(marking: [protocolName])
         #expect(result.diagnostics.isEmpty)
@@ -33,8 +35,28 @@ func generate(marking names: [String], module: String = "SwiftMockitoTests") -> 
         #expect(actual == expected, "\(firstDifference(actual, expected))")
     }
 
-    @Test func outputIsDeterministic() {
-        #expect(generate(marking: ["Catalog", "Client"]).files == generate(marking: ["Catalog", "Client"]).files)
+    @Test func outputIgnoresInputAndMarkerOrder() {
+        func run(markers: [String], reversed: Bool) -> [String: String] {
+            let marker = SourceInput(path: "/virtual/Mocks.swift", module: "SwiftMockitoTests",
+                                     text: "@GenerateMock(\(markers.map { "\($0).self" }.joined(separator: ", ")))\nenum Mocks {}\n")
+            let inputs = [marker] + fixtureInputs()
+            return Generator.generate(GeneratorConfiguration(
+                markedPaths: [marker.path], inputs: reversed ? inputs.reversed() : inputs,
+                testModule: "SwiftMockitoTests", outputDirectory: "/unused")).files
+        }
+        let forward = run(markers: ["Client", "Catalog", "Screen", "Feed"], reversed: false)
+        let backward = run(markers: ["Feed", "Screen", "Catalog", "Client"], reversed: true)
+        #expect(forward.count == 4)
+        #expect(forward == backward)
+    }
+
+    @Test func failureFileEscapesTheMessageAndStillParses() {
+        let diagnostic = GeneratorDiagnostic(severity: .error, message: "bad \"quote\" and \\ slash\nnew line\ttab",
+                                             path: "/p", line: 1, column: 1)
+        let file = Generator.failureFile([diagnostic, diagnostic])
+        #expect(file.contains(#"bad \"quote\" and \\ slash new line tab; bad"#))
+        #expect(!Parser.parse(source: file).hasError)
+        #expect(file.components(separatedBy: "\n").count == 3)   // comment, #error, trailing newline
     }
 
     @Test func duplicateMockNamesCollide() {

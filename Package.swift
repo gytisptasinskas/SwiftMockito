@@ -23,7 +23,14 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "SwiftMockitoGenerator", dependencies: ["SwiftMockitoGeneratorCore"]),
-        .testTarget(name: "GeneratorTests", dependencies: ["SwiftMockitoGeneratorCore"]),
+        .testTarget(
+            name: "GeneratorTests",
+            dependencies: [
+                "SwiftMockitoGeneratorCore",
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
+            ]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

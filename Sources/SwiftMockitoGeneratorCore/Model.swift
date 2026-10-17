@@ -29,6 +29,7 @@ struct Parameter: Equatable {
     let isClosure: Bool
     let isMetatype: Bool
     let isTuple: Bool
+    let isVariadic: Bool
 }
 
 struct Method: Equatable {

@@ -8,6 +8,17 @@ struct ProtocolResolver {
     static let reservedNames: Set<String> = ["runtime"]
     /// Inherited protocols that add no requirements for the mock to implement.
     static let markerProtocols: Set<String> = ["Sendable", "AnyObject", "SendableMetatype"]
+    /// Parameter names that cannot be used as bare identifiers in the generated body, or that
+    /// the body itself declares. Such parameters keep their label and get an `arg<position>` name.
+    static let unusableParameterNames: Set<String> = [
+        "for", "in", "is", "as", "do", "if", "else", "switch", "case", "default", "return", "throw", "try",
+        "await", "let", "var", "func", "class", "struct", "enum", "protocol", "extension", "import", "init",
+        "deinit", "subscript", "operator", "self", "Self", "super", "nil", "true", "false", "where", "while",
+        "repeat", "break", "continue", "fallthrough", "guard", "defer", "static", "public", "private",
+        "internal", "fileprivate", "open", "inout", "Any", "associatedtype", "typealias", "catch", "rethrows",
+        "throws",
+        "runtime", "capture", "placeholder", "newValue",
+    ]
 
     func resolve(_ marker: Marker, testModule: String) -> Result<MockModel, GeneratorFailure> {
         guard let root = index.protocolDecl(named: marker.protocolName) else {
@@ -102,6 +113,9 @@ struct ProtocolResolver {
                 return .failure(.error("\(protocolName).\(name): rethrows is not supported", at: marker))
             }
             if Self.reservedNames.contains(name) { return collision(protocolName, name, marker) }
+            for p in function.signature.parameterClause.parameters where isNonEscapingClosure(p.type) {
+                return .failure(.error("\(protocolName).\(name): non-escaping closure parameter '\(p.secondName?.text ?? p.firstName.text)' is not supported; mark it @escaping", at: marker))
+            }
             let returnType = function.signature.returnClause?.type.trimmedDescription
             return .success(.method(Method(
                 name: name,
@@ -110,7 +124,7 @@ struct ProtocolResolver {
                     GenericParameter(name: $0.name.text, constraint: $0.inheritedType?.trimmedDescription)
                 } ?? [],
                 parameters: function.signature.parameterClause.parameters.enumerated().map { position, p in
-                    parameter(label: p.firstName.text, secondName: p.secondName?.text, type: p.type, position: position)
+                    parameter(label: p.firstName.text, secondName: p.secondName?.text, type: p.type, isVariadic: p.ellipsis != nil, position: position)
                 },
                 returnType: (returnType == "Void" || returnType == "()") ? nil : returnType,
                 isAsync: effects?.asyncSpecifier != nil,
@@ -139,7 +153,8 @@ struct ProtocolResolver {
                 // Subscript parameters have no external label unless the name is written twice.
                 parameters: sub.parameterClause.parameters.enumerated().map { position, p in
                     parameter(label: p.secondName == nil ? "_" : p.firstName.text,
-                              secondName: p.secondName?.text ?? p.firstName.text, type: p.type, position: position)
+                              secondName: p.secondName?.text ?? p.firstName.text, type: p.type,
+                              isVariadic: p.ellipsis != nil, position: position)
                 },
                 returnType: sub.returnClause.type.trimmedDescription,
                 hasSetter: accessorList(sub.accessorBlock).contains { $0.accessorSpecifier.text == "set" }
@@ -158,17 +173,42 @@ struct ProtocolResolver {
         .failure(.error("\(protocolName).\(member) collides with SwiftMockito's Mock.\(member)", at: marker))
     }
 
-    private func parameter(label: String, secondName: String?, type: TypeSyntax, position: Int) -> Parameter {
+    private func parameter(label: String, secondName: String?, type: TypeSyntax, isVariadic: Bool, position: Int) -> Parameter {
         let internalName = secondName ?? label
         let resolved = resolveTypealias(type)
         return Parameter(
             label: label == "_" ? nil : label,
-            name: internalName == "_" ? "arg\(position)" : internalName,
+            name: internalName == "_" || Self.unusableParameterNames.contains(internalName) ? "arg\(position)" : internalName,
             type: type.trimmedDescription,
             isClosure: isClosure(resolved),
             isMetatype: resolved.is(MetatypeTypeSyntax.self),
-            isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1
+            isTuple: (resolved.as(TupleTypeSyntax.self)?.elements.count ?? 0) > 1,
+            isVariadic: isVariadic
         )
+    }
+
+    /// True when the parameter's type is a function type that is not `@escaping`.
+    /// Optionals are implicitly escaping, so `(() -> Void)?` is fine.
+    private func isNonEscapingClosure(_ type: TypeSyntax) -> Bool {
+        var current = type
+        for _ in 0..<8 {
+            if let attributed = current.as(AttributedTypeSyntax.self) {
+                let escaping = attributed.attributes.contains {
+                    $0.as(AttributeSyntax.self)?.attributeName.trimmedDescription == "escaping"
+                }
+                if escaping { return false }
+                current = attributed.baseType
+            } else if let tuple = current.as(TupleTypeSyntax.self), tuple.elements.count == 1,
+                      let only = tuple.elements.first, only.firstName == nil {
+                current = only.type
+            } else if let identifier = current.as(IdentifierTypeSyntax.self), identifier.genericArgumentClause == nil,
+                      let target = index.typealiasTarget(named: identifier.name.text) {
+                current = target
+            } else {
+                break
+            }
+        }
+        return current.is(FunctionTypeSyntax.self)
     }
 
     /// Follows typealiases declared in the sources, and strips attributes such as `@escaping`.

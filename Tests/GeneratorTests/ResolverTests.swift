@@ -93,6 +93,47 @@ func methods(_ model: MockModel) -> [Method] {
         #expect(failure.diagnostics == [GeneratorDiagnostic(severity: .error, message: message, path: "/t/Mocks.swift", line: 4, column: 1)])
     }
 
+    @Test func variadicAndKeywordNamedParameters() throws {
+        let model = try resolve("""
+            protocol Client {
+                func log(_ message: String, _ extra: Int...)
+                func find(for: String, runtime: Int, _ in: Int, newValue value: Int)
+            }
+            """).get()
+        let log = methods(model)[0].parameters
+        #expect(!log[0].isVariadic && log[1].isVariadic && log[1].type == "Int")
+        let find = methods(model)[1].parameters
+        #expect(find.map(\.label) == ["for", "runtime", nil, "newValue"])
+        #expect(find.map(\.name) == ["arg0", "arg1", "arg2", "value"])
+    }
+
+    @Test func nonEscapingClosureParameterIsAnError() {
+        guard case .failure(let failure) = resolve("protocol Client { func run(_ body: () -> Void) }") else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics.map(\.message) == ["Client.run: non-escaping closure parameter 'body' is not supported; mark it @escaping"])
+    }
+
+    @Test func nonEscapingClosureThroughTypealiasIsAnError() {
+        guard case .failure(let failure) = resolve("typealias Done = () -> Void\nprotocol Client { func run(done: Done) }") else {
+            Issue.record("expected failure"); return
+        }
+        #expect(failure.diagnostics.map(\.message) == ["Client.run: non-escaping closure parameter 'done' is not supported; mark it @escaping"])
+    }
+
+    @Test func escapingOptionalAndAliasedClosuresAreAccepted() throws {
+        let model = try resolve("""
+            typealias Done = () -> Void
+            protocol Client {
+                func a(_ body: @escaping () -> Void)
+                func b(_ body: (() -> Void)?)
+                func c(_ body: @escaping Done)
+                func d(_ body: Done?)
+            }
+            """).get()
+        #expect(methods(model).count == 4)
+    }
+
     @Test func actorProtocolIsUnsupported() {
         guard case .failure(let failure) = resolve("protocol Client: Actor {}") else { Issue.record("expected failure"); return }
         #expect(failure.diagnostics.map(\.message) == ["Client: Actor-constrained protocols are not supported"])

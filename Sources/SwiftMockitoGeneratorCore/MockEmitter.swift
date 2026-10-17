@@ -139,10 +139,11 @@ struct MockEmitter {
 
     /// Methods: `_ name: T` / `label name: T` / `name: T`. Subscripts: `name: T` means no label.
     private func declaration(_ p: Parameter, subscriptStyle: Bool) -> String {
+        let type = p.isVariadic ? "\(p.type)..." : p.type
         switch p.label {
-        case nil: return subscriptStyle ? "\(p.name): \(p.type)" : "_ \(p.name): \(p.type)"
-        case p.name?: return subscriptStyle ? "\(p.name) \(p.name): \(p.type)" : "\(p.name): \(p.type)"
-        case let label?: return "\(label) \(p.name): \(p.type)"
+        case nil: return subscriptStyle ? "\(p.name): \(type)" : "_ \(p.name): \(type)"
+        case p.name?: return subscriptStyle ? "\(p.name) \(p.name): \(type)" : "\(p.name): \(type)"
+        case let label?: return "\(label) \(p.name): \(type)"
         }
     }
 
@@ -159,8 +160,26 @@ struct MockEmitter {
     }
 }
 
-/// `(any P).self` and `(A, B).self` need parentheses; other types take `.self` directly.
+/// `(any P).self` and `((Int) -> Void).self` need parentheses; `String!` is spelled `String?`;
+/// other types take `.self` directly.
 func metatype(_ type: String) -> String {
-    if type.hasPrefix("any ") || type.hasPrefix("some ") { return "(\(type)).self" }
+    if type.hasSuffix("!") { return "\(type.dropLast())?.self" }
+    if type.hasPrefix("any ") || type.hasPrefix("some ") || hasTopLevelArrow(type) { return "(\(type)).self" }
     return "\(type).self"
+}
+
+/// Whether `->` occurs outside any brackets, i.e. the type itself is a function type.
+private func hasTopLevelArrow(_ type: String) -> Bool {
+    var depth = 0
+    var previous: Character?
+    for character in type {
+        switch character {
+        case "(", "[", "<": depth += 1
+        case ")", "]": depth -= 1
+        case ">": if previous == "-" { if depth == 0 { return true } } else { depth -= 1 }
+        default: break
+        }
+        previous = character
+    }
+    return false
 }
