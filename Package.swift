@@ -8,9 +8,20 @@ let package = Package(
     products: [
         .library(name: "SwiftMockito", targets: ["SwiftMockito"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", "600.0.0"..<"700.0.0"),
+    ],
     targets: [
         .target(name: "SwiftMockito"),
         .testTarget(name: "SwiftMockitoTests", dependencies: ["SwiftMockito"]),
+        .target(
+            name: "SwiftMockitoGeneratorCore",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftParser", package: "swift-syntax"),
+            ]
+        ),
+        .testTarget(name: "GeneratorTests", dependencies: ["SwiftMockitoGeneratorCore"]),
     ],
     swiftLanguageModes: [.v6]
 )
