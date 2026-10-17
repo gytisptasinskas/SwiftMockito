@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SwiftMockito
 
-private final class Reference {}
+private final class PlainReference {}
 private final class EquatableReference: Equatable {
     let id: Int
     init(id: Int) { self.id = id }
@@ -37,7 +37,7 @@ private struct Square: Shape, Equatable {}
     }
 
     @Test func nonEquatableClassesCompareByIdentity() {
-        let a = Reference(), b = Reference()
+        let a = PlainReference(), b = PlainReference()
         #expect(arg(a).matches(arg(a)))
         #expect(!arg(a).matches(arg(b)))
     }
@@ -50,7 +50,7 @@ private struct Square: Shape, Equatable {}
         func erased<T>(_ value: T) -> Argument { arg(value) }
         #expect(erased(5).matches(erased(5)))
         #expect(erased(Square()).isSupported)
-        let reference = Reference()
+        let reference = PlainReference()
         #expect(erased(reference).matches(erased(reference)))
     }
 
