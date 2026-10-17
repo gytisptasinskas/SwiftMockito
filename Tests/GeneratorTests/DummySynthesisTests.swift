@@ -90,4 +90,38 @@ private func generateP(_ source: String) -> GeneratorResult {
         #expect(file.contains("subscript(i: Int) -> String { fatalError("))
         #expect(file.contains("func make<T>(_ x: T) async throws -> [T] { fatalError("))
     }
+
+    @Test func sdkSuperclassWarns() {
+        #expect(generateP("import AppKit\nfinal class V: NSView {}\nprotocol P { func v() -> V }").diagnostics.map(\.message) == [
+            "MockP.v(): cannot build a dummy V (superclass NSView not declared in sources); call provideDummy(_:) with a V before stubbing or verifying it"
+        ])
+    }
+
+    @Test func subclassWithoutInitUsesTheSuperclassInitializer() throws {
+        let result = generateP("class B { init(x: Int) {} }\nfinal class C: B {}\nprotocol P { func c() -> C }")
+        #expect(result.diagnostics.isEmpty)
+        #expect(try #require(result.files["MockP.swift"]).contains("C(x: Dummies.resolve(Int.self, for: \"C.init.x\"))"))
+    }
+
+    @Test func classConformingToStandardProtocolFirstIsNotASubclass() {
+        #expect(generateP("final class C: Equatable { static func == (a: C, b: C) -> Bool { true } }\nprotocol P { func c() -> C }").diagnostics.isEmpty)
+    }
+
+    @Test func publicProtocolNeedsPublicInitializerFromOtherModule() {
+        let source = "public struct S { public let id: Int }\npublic protocol P { func s() -> S }"
+        #expect(generateP(source).diagnostics.map(\.message) == [
+            "MockP.s(): cannot build a dummy S (no initializer accessible from T); call provideDummy(_:) with a S before stubbing or verifying it"
+        ])
+    }
+
+    @Test func publicInitializerIsUsableFromOtherModule() throws {
+        let result = generateP("public struct S { public init(id: Int) {} }\npublic protocol P { func s() -> S }")
+        #expect(result.diagnostics.isEmpty)
+        #expect(try #require(result.files["MockP.swift"]).contains("S(id: Dummies.resolve(Int.self, for: \"S.init.id\"))"))
+    }
+
+    @Test func observersAndMultiBindingsAreMemberwiseArguments() throws {
+        let result = generateP("struct S { var a, b: Int; var c: String { didSet {} }; var d: Int = 1 }\nprotocol P { func s() -> S }")
+        #expect(try #require(result.files["MockP.swift"]).contains("S(a: Dummies.resolve(Int.self, for: \"S.a\"), b: Dummies.resolve(Int.self, for: \"S.b\"), c: Dummies.resolve(String.self, for: \"S.c\"))"))
+    }
 }

@@ -4,6 +4,7 @@ import SwiftSyntax
 final class DummySynthesizer {
     let index: SourceIndex
     let model: MockModel
+    let testModule: String
     private(set) var helpers: [String] = []
     private(set) var warnings: [GeneratorDiagnostic] = []
 
@@ -24,9 +25,10 @@ final class DummySynthesizer {
     private var inProgress: [String] = []
     private var sawRecursion = false
 
-    init(index: SourceIndex, model: MockModel) {
+    init(index: SourceIndex, model: MockModel, testModule: String) {
         self.index = index
         self.model = model
+        self.testModule = testModule
     }
 
     /// The `fallback:` argument for a type the runtime has no built-in for, or nil.
@@ -143,9 +145,9 @@ final class DummySynthesizer {
     private func buildDeclaration(_ declaration: IndexedType, name: String) -> Built {
         switch declaration {
         case .protocolDecl(let decl): buildProtocol(decl, name: name)
-        case .structDecl(let decl): buildStruct(decl.node, name: name)
+        case .structDecl(let decl): buildStruct(decl, name: name)
         case .enumDecl(let decl): buildEnum(decl.node, name: name)
-        case .classDecl(let decl): buildClass(decl.node, name: name)
+        case .classDecl(let decl): buildClass(decl, name: name)
         }
     }
 
@@ -159,38 +161,94 @@ final class DummySynthesizer {
 
     private func helperName(_ name: String) -> String { "_dummy\(name)" }
 
-    private func buildStruct(_ decl: StructDeclSyntax, name: String) -> Built {
+    private func buildStruct(_ declaration: IndexedDecl<StructDeclSyntax>, name: String) -> Built {
+        let decl = declaration.node
+        let reach = reach(of: declaration.input.module)
         let initializers = decl.memberBlock.members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }
         if initializers.isEmpty {
-            let properties = storedProperties(decl)
+            // The memberwise initializer is internal, and private when a private property needs a value.
+            if !reach.internal { return missing(name, reach.reason) }
             if decl.memberBlock.members.contains(where: { hasInaccessibleStoredProperty($0.decl) }) {
                 return missing(name, "no accessible initializer")
             }
-            return construct(name,
-                             arguments: properties.map { (label: $0.name, type: $0.type, key: "\(name).\($0.name)") })
+            return construct(name, arguments: storedProperties(decl).map {
+                (label: $0.name, type: $0.type, key: "\(name).\($0.name)")
+            })
         }
-        guard let chosen = accessibleInitializer(initializers) else { return missing(name, "no accessible initializer") }
+        guard let chosen = accessibleInitializer(initializers, reach: reach) else {
+            return missing(name, reach.internal ? "no accessible initializer" : reach.reason)
+        }
         return construct(name, arguments: initializerArguments(chosen, name: name))
     }
 
-    private func buildClass(_ decl: ClassDeclSyntax, name: String) -> Built {
-        let initializers = decl.memberBlock.members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }
-        if initializers.isEmpty {
-            let needsValue = decl.memberBlock.members.contains { item in
-                guard let variable = item.decl.as(VariableDeclSyntax.self),
-                      !variable.modifiers.contains(where: { $0.name.text == "static" || $0.name.text == "class" })
-                else { return false }
-                return variable.bindings.contains { binding in
-                    guard isStored(binding), binding.initializer == nil else { return false }
-                    let isOptionalVar = variable.bindingSpecifier.text == "var"
-                        && binding.typeAnnotation?.type.is(OptionalTypeSyntax.self) == true
-                    return !isOptionalVar
-                }
-            }
-            return needsValue ? missing(name, "no accessible initializer") : construct(name, arguments: [])
+    private enum InitializerChoice {
+        case arguments([(label: String?, type: String, key: String)])
+        case failure(String)
+    }
+
+    private func buildClass(_ declaration: IndexedDecl<ClassDeclSyntax>, name: String) -> Built {
+        switch classInitializer(declaration, name: name, depth: 0) {
+        case .arguments(let arguments): construct(name, arguments: arguments)
+        case .failure(let reason): missing(name, reason)
         }
-        guard let chosen = accessibleInitializer(initializers) else { return missing(name, "no accessible initializer") }
-        return construct(name, arguments: initializerArguments(chosen, name: name))
+    }
+
+    /// The initializer call for `name`, a class or a subclass of it. A class that declares no
+    /// initializer inherits its superclass's designated ones, so the choice recurses up the chain.
+    private func classInitializer(_ declaration: IndexedDecl<ClassDeclSyntax>, name: String, depth: Int) -> InitializerChoice {
+        let decl = declaration.node
+        let reach = reach(of: declaration.input.module)
+        let initializers = decl.memberBlock.members.compactMap { $0.decl.as(InitializerDeclSyntax.self) }
+        if !initializers.isEmpty {
+            guard let chosen = accessibleInitializer(initializers, reach: reach) else {
+                return .failure(reach.internal ? "no accessible initializer" : reach.reason)
+            }
+            return .arguments(initializerArguments(chosen, name: name))
+        }
+        let needsValue = decl.memberBlock.members.contains { item in
+            guard let variable = item.decl.as(VariableDeclSyntax.self),
+                  !variable.modifiers.contains(where: { $0.name.text == "static" || $0.name.text == "class" })
+            else { return false }
+            return variable.bindings.contains { binding in
+                guard isStored(binding), binding.initializer == nil else { return false }
+                let isOptionalVar = variable.bindingSpecifier.text == "var"
+                    && binding.typeAnnotation?.type.is(OptionalTypeSyntax.self) == true
+                return !isOptionalVar
+            }
+        }
+        if needsValue { return .failure("no accessible initializer") }
+        if let first = decl.inheritanceClause?.inheritedTypes.first?.type.trimmedDescription,
+           !Self.protocolsNeverSuperclass.contains(first) {
+            switch index.typeDecl(named: first) {
+            case .classDecl(let superclass)?:
+                // A superclass chain this deep is a cycle.
+                return depth < 16 ? classInitializer(superclass, name: name, depth: depth + 1) : .failure("no accessible initializer")
+            case .protocolDecl?:
+                break
+            default:
+                return .failure("superclass \(first) not declared in sources")
+            }
+        }
+        // The implicit `init()` is internal.
+        return reach.internal ? .arguments([]) : .failure(reach.reason)
+    }
+
+    /// Standard protocols a class may list first; none of them can be a superclass.
+    private static let protocolsNeverSuperclass: Set<String> = [
+        "Equatable", "Hashable", "Comparable", "Codable", "Encodable", "Decodable", "Sendable", "Identifiable",
+        "CustomStringConvertible", "CustomDebugStringConvertible", "Error", "ObservableObject", "AnyObject",
+        "RawRepresentable", "CaseIterable",
+    ]
+
+    /// Whether the generated mock can call a module's `internal` initializers. That holds for the test
+    /// module and for modules the mock imports with `@testable` (the resolver does that for non-public
+    /// protocols, and keeps a protocol file's own `@testable` imports). Otherwise only `public` ones
+    /// (`package` ones when the protocol is `package`) work.
+    private func reach(of module: String) -> (internal: Bool, allowed: [String], reason: String) {
+        let canTestable = module == testModule
+            || model.imports.contains { $0.contains("@testable") && $0.hasSuffix("import \(module)") }
+        return (canTestable, model.access == "package " ? ["public", "open", "package"] : ["public", "open"],
+                "no initializer accessible from \(testModule)")
     }
 
     private func buildEnum(_ decl: EnumDeclSyntax, name: String) -> Built {
@@ -236,12 +294,16 @@ final class DummySynthesizer {
 
     // MARK: Initializers
 
-    /// The non-failable, non-throwing, non-private initializer with the fewest parameters.
-    private func accessibleInitializer(_ initializers: [InitializerDeclSyntax]) -> InitializerDeclSyntax? {
+    /// The non-failable, non-throwing, non-private initializer with the fewest parameters. Where the
+    /// module's internals are out of reach, only explicitly public ones qualify.
+    private func accessibleInitializer(_ initializers: [InitializerDeclSyntax],
+                                       reach: (internal: Bool, allowed: [String], reason: String)) -> InitializerDeclSyntax? {
         initializers.filter { initializer in
-            initializer.optionalMark == nil
+            let access = initializer.modifiers.filter { $0.detail == nil }.map(\.name.text)
+            return initializer.optionalMark == nil
                 && initializer.signature.effectSpecifiers == nil
-                && !initializer.modifiers.contains { ["private", "fileprivate"].contains($0.name.text) && $0.detail == nil }
+                && !access.contains { $0 == "private" || $0 == "fileprivate" }
+                && (reach.internal || access.contains { reach.allowed.contains($0) })
         }.min { $0.signature.parameterClause.parameters.count < $1.signature.parameterClause.parameters.count }
     }
 
@@ -257,12 +319,18 @@ final class DummySynthesizer {
         return arguments
     }
 
+    /// A private stored property with no default makes the memberwise initializer private.
     private func hasInaccessibleStoredProperty(_ declaration: DeclSyntax) -> Bool {
         guard let variable = declaration.as(VariableDeclSyntax.self),
               !variable.modifiers.contains(where: { $0.name.text == "static" }),
               variable.modifiers.contains(where: { ["private", "fileprivate"].contains($0.name.text) && $0.detail == nil })
         else { return false }
-        return variable.bindings.contains { isStored($0) && !(variable.bindingSpecifier.text == "let" && $0.initializer != nil) }
+        return variable.bindings.contains { binding in
+            guard isStored(binding), binding.initializer == nil else { return false }
+            let isOptionalVar = variable.bindingSpecifier.text == "var"
+                && binding.typeAnnotation?.type.is(OptionalTypeSyntax.self) == true
+            return !isOptionalVar
+        }
     }
 
     /// A binding with no getter: observers (`willSet`, `didSet`) keep a property stored.
@@ -331,19 +399,25 @@ final class DummySynthesizer {
         return current.as(FunctionTypeSyntax.self)
     }
 
-    /// Stored properties that the memberwise initializer takes, in declaration order.
+    /// Stored properties that the memberwise initializer takes, in declaration order. Properties with
+    /// observers are stored; ones with a default are optional arguments and left out. In `var a, b: Int`
+    /// a binding without a type takes the type of the next binding that has one.
     func storedProperties(_ decl: StructDeclSyntax) -> [(name: String, type: String)] {
-        decl.memberBlock.members.compactMap { $0.decl.as(VariableDeclSyntax.self) }
-            .filter { variable in !variable.modifiers.contains { $0.name.text == "static" } }
-            .flatMap { variable in
-                variable.bindings.compactMap { binding -> (name: String, type: String)? in
-                    guard binding.accessorBlock == nil,
-                          !(variable.bindingSpecifier.text == "let" && binding.initializer != nil),
-                          let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
-                          let type = binding.typeAnnotation?.type.trimmedDescription else { return nil }
-                    return (name, type)
-                }
+        var result: [(name: String, type: String)] = []
+        for variable in decl.memberBlock.members.compactMap({ $0.decl.as(VariableDeclSyntax.self) })
+        where !variable.modifiers.contains(where: { $0.name.text == "static" }) {
+            var nextType: String?
+            var entries: [(name: String, type: String)] = []
+            for binding in variable.bindings.reversed() {
+                if let type = binding.typeAnnotation?.type.trimmedDescription { nextType = type }
+                guard isStored(binding), binding.initializer == nil,
+                      let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
+                      let type = nextType else { continue }
+                entries.append((name, type))
             }
+            result += entries.reversed()
+        }
+        return result
     }
 }
 

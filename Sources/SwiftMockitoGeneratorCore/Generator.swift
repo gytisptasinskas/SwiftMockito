@@ -38,7 +38,7 @@ public enum Generator {
             }
             switch resolver.resolve(marker, testModule: configuration.testModule) {
             case .success(let model):
-                let synthesizer = DummySynthesizer(index: index, model: model)
+                let synthesizer = DummySynthesizer(index: index, model: model, testModule: configuration.testModule)
                 files[fileName] = MockEmitter(model: model, synthesizer: synthesizer).emit()
                 diagnostics += synthesizer.warnings
             case .failure(let failure):
