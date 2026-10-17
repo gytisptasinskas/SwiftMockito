@@ -61,6 +61,7 @@ These are binding for Tasks 5 onward. The task text below already follows them.
 - **D4: a.** `@MainActor final class MockP: Mock, P, @unchecked Sendable`.
 - **D5: amended.** `verifyInOrder` uses a plain result builder and sets the task-local `Capture.continuesAfterRecord`. While it is set, generated throwing members record the call and then **return a placeholder** instead of throwing: `return` for `Void`, or `Dummies.placeholder(T.self, fallback:)` when it yields a value. They throw `CaptureSignal` only when no placeholder exists (for example, a generic `T` return). `verifyInOrder` turns that into a misuse that names the member and suggests `provideDummy(_:)`.
 - **A6.** Generated mocks restate the conformance: `final class MockP: Mock, P, @unchecked Sendable`. Without it, every build warns.
+- **Async APIs (Task 9 review).** Every public `async` function in SwiftMockito is declared `nonisolated(nonsending)`: the `verifyInOrder` async overload, and `MockRuntime`'s async `invoke` / `invokeThrowing`. In Swift 6, a plain nonisolated async function is `@concurrent`. An actor-isolated caller then cannot pass it a non-`Sendable` closure or argument.
 
 ---
 
