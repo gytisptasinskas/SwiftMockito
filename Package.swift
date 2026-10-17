@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS(.v26), .iOS(.v26)],   // Task.immediate (resolved D1)
     products: [
         .library(name: "SwiftMockito", targets: ["SwiftMockito"]),
+        .executable(name: "SwiftMockitoGenerator", targets: ["SwiftMockitoGenerator"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-syntax.git", "600.0.0"..<"700.0.0"),
@@ -21,6 +22,7 @@ let package = Package(
                 .product(name: "SwiftParser", package: "swift-syntax"),
             ]
         ),
+        .executableTarget(name: "SwiftMockitoGenerator", dependencies: ["SwiftMockitoGeneratorCore"]),
         .testTarget(name: "GeneratorTests", dependencies: ["SwiftMockitoGeneratorCore"]),
     ],
     swiftLanguageModes: [.v6]
