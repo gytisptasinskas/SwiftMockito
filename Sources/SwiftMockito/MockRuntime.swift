@@ -1,8 +1,12 @@
 import Foundation
 
+/// Used by generated mocks; don't call it directly.
+///
 /// Lock-protected stubs and call history for one mock instance.
 public final class MockRuntime: @unchecked Sendable {
+    /// Used by generated mocks; don't call it directly. The mock's name, used in failure messages.
     public let mockName: String
+    /// Used by generated mocks; don't call it directly. Where the mock was created.
     public let site: CallSite
 
     private let lock = NSLock()
@@ -16,6 +20,10 @@ public final class MockRuntime: @unchecked Sendable {
 
     // MARK: Dispatch used by generated code
 
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// Records a call to a synchronous, non-throwing member and returns its stubbed result.
+    /// Traps when no stub matches and the member returns a value.
     public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value):
@@ -30,6 +38,9 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// Records a call to an `async`, non-throwing member and returns its stubbed result.
     nonisolated(nonsending) public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) async -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value):
@@ -43,6 +54,10 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// Records a call to a synchronous, throwing member and returns or throws its stubbed result.
+    /// Throws ``MissingStubError`` when no stub matches and the member returns a value.
     public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) throws -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value):
@@ -57,6 +72,9 @@ public final class MockRuntime: @unchecked Sendable {
         }
     }
 
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// Records a call to an `async`, throwing member and returns or throws its stubbed result.
     nonisolated(nonsending) public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) async throws -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value): return value

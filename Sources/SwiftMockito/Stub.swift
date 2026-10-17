@@ -1,10 +1,16 @@
 import Foundation
 
+/// Used by generated mocks; don't call it directly.
+///
 /// What a generated member does, as recorded during capture.
 public struct Effects: OptionSet, Sendable {
+    /// Used by generated mocks; don't call it directly.
     public let rawValue: Int
+    /// Used by generated mocks; don't call it directly.
     public init(rawValue: Int) { self.rawValue = rawValue }
+    /// Used by generated mocks; don't call it directly. The member is `async`.
     public static let async = Effects(rawValue: 1 << 0)
+    /// Used by generated mocks; don't call it directly. The member `throws`.
     public static let throwing = Effects(rawValue: 1 << 1)
 }
 
@@ -34,14 +40,40 @@ enum StoredResponse {
     case answer(StoredAnswer)
 }
 
-/// Configures the response of one recorded call. `Failure` is `Never` for members
-/// that cannot throw, so `thenThrow` is unavailable for them at compile time.
+/// Configures the response of one recorded call.
+///
+/// ``when(_:fileID:filePath:line:column:)`` and ``when(isolation:fileID:filePath:line:column:_:)``
+/// return a `Stub`. Finish it with ``thenReturn(_:)``, ``thenThrow(_:)`` or `thenAnswer(_:)`:
+///
+/// ```swift
+/// when(client.cached(id: "42")).thenReturn(.fixture)
+/// when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+/// ```
+///
+/// `R` is the member's return type. `Failure` is `Never` for members that cannot throw, so
+/// ``thenThrow(_:)`` is unavailable for them at compile time.
+///
+/// Each `then…` call installs one stub and returns the same `Stub`. A misused stub, such as a
+/// `thenAnswer` whose parameter types differ from the member's, is reported at the `when` line
+/// and installs nothing.
 public struct Stub<R, Failure: Error> {
     let target: StubTarget?
 
     init(target: StubTarget?) { self.target = target }
 
     /// Returns `values` in order on successive matching calls; the last one repeats.
+    ///
+    /// ```swift
+    /// when(client.cached(id: "42")).thenReturn(nil, .fixture)
+    /// client.cached(id: "42")   // nil
+    /// client.cached(id: "42")   // .fixture
+    /// client.cached(id: "42")   // .fixture
+    /// ```
+    ///
+    /// Passing no values is reported as a misuse and installs nothing.
+    ///
+    /// - Parameter values: One value, or several to return in sequence.
+    /// - Returns: This stub.
     @discardableResult
     public func thenReturn(_ values: R...) -> Self {
         guard let target else { return self }
@@ -65,6 +97,23 @@ public struct Stub<R, Failure: Error> {
         return false
     }
 
+    /// Computes the result from the call's arguments.
+    ///
+    /// The closure receives the arguments in declaration order and returns the result. It may
+    /// throw only when the member can, and the error is thrown to the caller:
+    ///
+    /// ```swift
+    /// when(client.cached(id: "42")).thenAnswer { id in User(id: id, name: "Gytis") }
+    /// when { try client.save(.fixture) }.thenAnswer { (user: User) in
+    ///     if user.name.isEmpty { throw ClientError.offline }
+    /// }
+    /// ```
+    ///
+    /// Annotate the parameter types when a member takes a callback. The closure runs on
+    /// whatever thread or actor the code under test calls the mock from.
+    ///
+    /// - Parameter body: A closure that takes the member's arguments and returns its result.
+    /// - Returns: This stub.
     @discardableResult
     public func thenAnswer<each A>(_ body: @escaping (repeat each A) throws(Failure) -> R) -> Self {
         install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: false, sync: { packed in
@@ -73,6 +122,21 @@ public struct Stub<R, Failure: Error> {
         }, async: nil))
     }
 
+    /// Computes the result of an `async` member from the call's arguments.
+    ///
+    /// The closure may `await`, and may throw only when the member can:
+    ///
+    /// ```swift
+    /// when { try await client.fetch(id: "42") }.thenAnswer { (id: String) async throws in
+    ///     try await Task.sleep(for: .milliseconds(10))
+    ///     return User(id: id, name: "Gytis")
+    /// }
+    /// ```
+    ///
+    /// An `async` answer for a synchronous member is reported as a misuse and installs nothing.
+    ///
+    /// - Parameter body: An `async` closure that takes the member's arguments and returns its result.
+    /// - Returns: This stub.
     @discardableResult
     public func thenAnswer<each A>(_ body: @escaping (repeat each A) async throws(Failure) -> R) -> Self {
         install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: true, sync: nil, async: { packed in
@@ -101,8 +165,17 @@ public struct Stub<R, Failure: Error> {
 }
 
 extension Stub where Failure == any Error {
-    /// Non-throwing answers for members that can throw. Separate overloads, because converting a
-    /// non-throwing closure to `throws(any Error)` crashes the compiler when an argument is a callback.
+    /// Computes the result of a throwing member from the call's arguments, without throwing.
+    ///
+    /// ```swift
+    /// when { try client.save(.fixture) }.thenAnswer { (user: User) in print("saved", user.id) }
+    /// ```
+    ///
+    /// This is a separate overload, because converting a non-throwing closure to
+    /// `throws(any Error)` crashes the compiler when an argument is a callback.
+    ///
+    /// - Parameter body: A closure that takes the member's arguments and returns its result.
+    /// - Returns: This stub.
     @discardableResult
     public func thenAnswer<each A>(_ body: @escaping (repeat each A) -> R) -> Self {
         install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: false, sync: { packed in
@@ -111,6 +184,19 @@ extension Stub where Failure == any Error {
         }, async: nil))
     }
 
+    /// Computes the result of an `async` throwing member from the call's arguments, without throwing.
+    ///
+    /// ```swift
+    /// when { try await client.fetch(id: "42") }.thenAnswer { (id: String) async in
+    ///     await Task.yield()
+    ///     return User(id: id, name: "Gytis")
+    /// }
+    /// ```
+    ///
+    /// An `async` answer for a synchronous member is reported as a misuse and installs nothing.
+    ///
+    /// - Parameter body: An `async` closure that takes the member's arguments and returns its result.
+    /// - Returns: This stub.
     @discardableResult
     public func thenAnswer<each A>(_ body: @escaping (repeat each A) async -> R) -> Self {
         install(StoredAnswer(argumentsType: (repeat each A).self, isAsync: true, sync: nil, async: { packed in
@@ -119,6 +205,17 @@ extension Stub where Failure == any Error {
         }))
     }
 
+    /// Throws `error` on every matching call.
+    ///
+    /// ```swift
+    /// when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+    /// ```
+    ///
+    /// Available only when the stubbed expression can throw. On a member that does not throw,
+    /// the `when(_:)` form is a compile error, and the closure form is reported at the `when` line.
+    ///
+    /// - Parameter error: The error to throw.
+    /// - Returns: This stub.
     @discardableResult
     public func thenThrow(_ error: any Error) -> Self {
         guard let target else { return self }

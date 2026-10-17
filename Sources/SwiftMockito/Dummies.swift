@@ -1,13 +1,37 @@
 import Foundation
 
-/// Registers `value` as the dummy that recording returns for `T`. This overrides
-/// built-ins and generated fallbacks. Process-wide; values are immutable (`Sendable`).
+/// Registers `value` as the dummy that recording returns for `T`.
+///
+/// While `when`, `verify` or `verifyInOrder` records a call, a member must return something.
+/// SwiftMockito returns a dummy, which never reaches the code under test. Register one for a
+/// return type that has no built-in or generated dummy, before you stub or verify the member:
+///
+/// ```swift
+/// provideDummy(CGSize(width: 1, height: 1))
+/// when(view.size()).thenReturn(CGSize(width: 320, height: 480))
+/// ```
+///
+/// A registered value overrides built-ins and generated fallbacks. The registry is
+/// process-wide, is not cleared by ``reset(_:)``, and holds immutable (`Sendable`) values.
+/// It is keyed by exact type, so for a member that returns `Base`, register a `Base`:
+///
+/// ```swift
+/// provideDummy(Sub() as Base)
+/// ```
+///
+/// - Parameter value: The dummy to return for `T` while recording.
 public func provideDummy<T: Sendable>(_ value: T) {
     DummyRegistry.shared.set(value, for: T.self)
 }
 
+/// Used by generated mocks; don't call it directly.
+///
+/// Looks up the dummy values that generated members return while recording.
 public enum Dummies {
-    /// Generated non-throwing members call this while recording.
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// Generated non-throwing members call this while recording. Returns the registered,
+    /// built-in or `fallback` dummy for `type`, or reports ``MissingDummyError`` and traps.
     public static func resolve<T>(_ type: T.Type, for member: String, fallback: (() -> T)? = nil) -> T {
         if let value = lookup(type) { return value }
         if let fallback { return fallback() }
@@ -15,6 +39,8 @@ public enum Dummies {
         Reporter.trap(error.description, at: Capture.currentSite ?? CallSite())
     }
 
+    /// Used by generated mocks; don't call it directly.
+    ///
     /// Non-trapping variant for throwing members recorded inside `verifyInOrder`.
     public static func placeholder<T>(_ type: T.Type, fallback: (() -> T)? = nil) -> T? {
         lookup(type) ?? fallback?()

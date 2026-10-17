@@ -1,14 +1,24 @@
 import Foundation
 
+/// Used by generated mocks; don't call it directly.
+///
 /// Thrown by generated throwing members while recording. `when`/`verify` catch it.
 public struct CaptureSignal: Error, Sendable {
+    /// Used by generated mocks; don't call it directly.
     public init() {}
 }
 
+/// Used by generated mocks; don't call it directly.
+///
 /// The recording context that `when`, `verify`, `verifyNever` and `verifyInOrder`
 /// install around their expression. It is task-local, so parallel tests never share it.
 public final class Capture: @unchecked Sendable {
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// The active recording context, or `nil` when the mock should answer from its stubs.
     @TaskLocal public static var current: Capture?
+    /// Used by generated mocks; don't call it directly.
+    ///
     /// Set by `verifyInOrder`. While true, generated throwing members return a
     /// placeholder after recording instead of throwing `CaptureSignal`, so the
     /// lines after them are recorded too.
@@ -21,6 +31,17 @@ public final class Capture: @unchecked Sendable {
 
     init() {}
 
+    /// Used by generated mocks; don't call it directly.
+    ///
+    /// Records one call instead of running it.
+    ///
+    /// - Parameters:
+    ///   - runtime: The mock's runtime.
+    ///   - member: The member's name, such as `fetch(id:)`.
+    ///   - key: The arguments that take part in matching.
+    ///   - args: Every argument, closures included, in declaration order.
+    ///   - effects: Whether the member is `async` or `throws`.
+    ///   - returns: The member's declared return type.
     public func record<each A>(
         _ runtime: MockRuntime,
         _ member: String,
