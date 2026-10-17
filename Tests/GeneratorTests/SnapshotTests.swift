@@ -1,0 +1,112 @@
+import Foundation
+import SwiftParser
+import SwiftSyntax
+import Testing
+@testable import SwiftMockitoGeneratorCore
+
+/// `Tests/SwiftMockitoTests/Fixtures`, which holds the compiled goldens.
+let fixtures = URL(filePath: #filePath).deletingLastPathComponent()
+    .deletingLastPathComponent().appending(path: "SwiftMockitoTests/Fixtures")
+
+/// Every fixture protocol file that exists so far.
+func fixtureInputs() -> [SourceInput] {
+    ["Client.swift", "Catalog.swift", "Screen.swift", "Feed.swift", "Edge.swift", "Store.swift", "Shapes.swift", "Escapes.swift"].compactMap { name in
+        let url = fixtures.appending(path: name)
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return SourceInput(path: url.path, module: "SwiftMockitoTests", text: text)
+    }
+}
+
+func generate(marking names: [String], module: String = "SwiftMockitoTests") -> GeneratorResult {
+    let marker = SourceInput(path: "/virtual/Mocks.swift", module: module,
+                             text: "@GenerateMock(\(names.map { "\($0).self" }.joined(separator: ", ")))\nenum Mocks {}\n")
+    return Generator.generate(GeneratorConfiguration(
+        markedPaths: [marker.path], inputs: [marker] + fixtureInputs(),
+        testModule: module, outputDirectory: "/unused"))
+}
+
+@Suite struct SnapshotTests {
+    @Test(arguments: ["Client", "Catalog", "Screen", "Feed", "Edge", "Store", "Shapes", "Escapes"])
+    func generatorReproducesGolden(protocolName: String) throws {
+        let result = generate(marking: [protocolName])
+        #expect(result.diagnostics.isEmpty)
+        let expected = try String(contentsOf: fixtures.appending(path: "Mock\(protocolName).swift"), encoding: .utf8)
+        let actual = try #require(result.files["Mock\(protocolName).swift"])
+        #expect(actual == expected, "\(firstDifference(actual, expected))")
+    }
+
+    @Test func outputIgnoresInputAndMarkerOrder() {
+        func run(markers: [String], reversed: Bool) -> [String: String] {
+            let marker = SourceInput(path: "/virtual/Mocks.swift", module: "SwiftMockitoTests",
+                                     text: "@GenerateMock(\(markers.map { "\($0).self" }.joined(separator: ", ")))\nenum Mocks {}\n")
+            let inputs = [marker] + fixtureInputs()
+            return Generator.generate(GeneratorConfiguration(
+                markedPaths: [marker.path], inputs: reversed ? inputs.reversed() : inputs,
+                testModule: "SwiftMockitoTests", outputDirectory: "/unused")).files
+        }
+        let forward = run(markers: ["Client", "Catalog", "Screen", "Feed"], reversed: false)
+        let backward = run(markers: ["Feed", "Screen", "Catalog", "Client"], reversed: true)
+        #expect(forward.count == 4)
+        #expect(forward == backward)
+    }
+
+    @Test func failureFileEscapesTheMessageAndStillParses() {
+        let diagnostic = GeneratorDiagnostic(severity: .error, message: "bad \"quote\" and \\ slash\nnew line\ttab",
+                                             path: "/p", line: 1, column: 1)
+        let file = Generator.failureFile([diagnostic, diagnostic])
+        #expect(file.contains(#"bad \"quote\" and \\ slash new line tab; bad"#))
+        #expect(!Parser.parse(source: file).hasError)
+        #expect(file.components(separatedBy: "\n").count == 3)   // comment, #error, trailing newline
+    }
+
+    /// Each suite can name the protocols it mocks, as Flutter's `@GenerateMocks` does per test file;
+    /// the target still gets one `MockClient`.
+    @Test func repeatedMarkersForOneProtocolGenerateOneMock() {
+        let list = SourceInput(path: "/v/ListTests.swift", module: "T", text: "@GenerateMock(Client.self)\nstruct ListTests {}\n")
+        let detail = SourceInput(path: "/v/DetailTests.swift", module: "T",
+                                 text: "@GenerateMock(Client.self, Catalog.self)\n@MainActor\nstruct DetailTests {}\n")
+        let result = Generator.generate(GeneratorConfiguration(markedPaths: [list.path, detail.path],
+            inputs: [list, detail] + fixtureInputs(), testModule: "T", outputDirectory: "/unused"))
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.files.keys.sorted() == ["MockCatalog.swift", "MockClient.swift"])
+    }
+
+    @Test func failedProtocolStillWritesAnErrorFile() {
+        let result = generate(marking: ["Missing"])
+        #expect(result.hasErrors)
+        #expect(result.files["MockMissing.swift"]?.contains("#error(") == true)
+    }
+
+    @Test func markerOutsideTheDeclaredOutputsIsAnErrorButStillWritesTheFile() {
+        let marker = SourceInput(path: "/v/M.swift", module: "T", text: "@GenerateMock(Client.self)\nenum A {}\n")
+        let result = Generator.generate(GeneratorConfiguration(markedPaths: [marker.path],
+            inputs: [marker] + fixtureInputs(), testModule: "T", outputDirectory: "/unused",
+            expectedFiles: ["MockCatalog.swift"]))
+        #expect(result.diagnostics == [GeneratorDiagnostic(severity: .error,
+            message: "MockClient.swift was not declared by the build plugin (the marker could not be read by the plugin's scanner); write each argument of @GenerateMock(...) as Name.self, with no comments inside the parentheses",
+            path: "/v/M.swift", line: 1, column: 1)])
+        #expect(result.files["MockClient.swift"]?.hasPrefix("// Generated by SwiftMockito from Client.") == true)
+        #expect(result.files["MockCatalog.swift"]?.hasPrefix("// Generated by SwiftMockito. No active") == true)
+    }
+
+    @Test func noExpectedFilesMeansNoDeclaredOutputCheck() {
+        #expect(generate(marking: ["Client"]).diagnostics.isEmpty)
+    }
+
+    @Test func expectedButUnmarkedFileIsWrittenEmpty() {
+        let marker = SourceInput(path: "/v/M.swift", module: "T", text: "// @GenerateMock(Client.self)\n")
+        let result = Generator.generate(GeneratorConfiguration(markedPaths: [marker.path], inputs: [marker],
+            testModule: "T", outputDirectory: "/unused", expectedFiles: ["MockClient.swift"]))
+        #expect(result.files == ["MockClient.swift": "// Generated by SwiftMockito. No active @GenerateMock(Client.self) found.\n"])
+        #expect(result.diagnostics.isEmpty)
+    }
+}
+
+func firstDifference(_ a: String, _ b: String) -> String {
+    let al = a.split(separator: "\n", omittingEmptySubsequences: false)
+    let bl = b.split(separator: "\n", omittingEmptySubsequences: false)
+    for i in 0..<max(al.count, bl.count) where i >= al.count || i >= bl.count || al[i] != bl[i] {
+        return "line \(i + 1):\n  generated: \(i < al.count ? String(al[i]) : "<eof>")\n  golden:    \(i < bl.count ? String(bl[i]) : "<eof>")"
+    }
+    return "identical"
+}
