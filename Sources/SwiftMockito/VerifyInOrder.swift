@@ -18,7 +18,7 @@ public func verifyInOrder(
     applyInOrder(captureAll("verifyInOrder", site: site, isolation: isolation, continuing: true, calls), site: site)
 }
 
-public func verifyInOrder(
+nonisolated(nonsending) public func verifyInOrder(
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
     @VerifyInOrderBuilder _ calls: () async throws -> Void

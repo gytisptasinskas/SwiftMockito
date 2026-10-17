@@ -18,7 +18,7 @@ import Testing
         return box.messages
     }
 
-    func failures(_ body: nonisolated(nonsending) () async -> Void) async -> [String] {
+    nonisolated(nonsending) func failures(_ body: nonisolated(nonsending) () async -> Void) async -> [String] {
         let box = MessageBox()
         await Reporter.$sink.withValue({ message, _ in box.append(message) }, operation: body)
         return box.messages
@@ -110,5 +110,40 @@ import Testing
                 try await mock.fetch(id: "2")
             }
         } == ["verifyInOrder: SampleMock.fetch(id:) with (\"2\") was not called after SampleMock.cached(id:) with (\"1\").\nNo calls to fetch(id:) were recorded."])
+    }
+
+    @MainActor @Test func asyncOverloadOnMainActorPasses() async {
+        _ = mock.cached(id: "1")
+        _ = try? await mock.fetch(id: "2")
+        let messages = await failures {
+            await verifyInOrder {
+                mock.cached(id: "1")
+                try await mock.fetch(id: "2")
+            }
+        }
+        #expect(messages.isEmpty)
+    }
+
+    @MainActor @Test func asyncOverloadOnMainActorReportsMissingCall() async {
+        _ = mock.cached(id: "1")
+        let messages = await failures {
+            await verifyInOrder {
+                mock.cached(id: "1")
+                try await mock.fetch(id: "2")
+            }
+        }
+        #expect(messages == ["verifyInOrder: SampleMock.fetch(id:) with (\"2\") was not called after SampleMock.cached(id:) with (\"1\").\nNo calls to fetch(id:) were recorded."])
+    }
+
+    @MainActor @Test func asyncOverloadOnMainActorReportsReversedOrder() async {
+        _ = try? await mock.fetch(id: "2")
+        _ = mock.cached(id: "1")
+        let messages = await failures {
+            await verifyInOrder {
+                mock.cached(id: "1")
+                try await mock.fetch(id: "2")
+            }
+        }
+        #expect(messages.count == 1)
     }
 }
