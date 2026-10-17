@@ -1,3 +1,5 @@
+/// Used by generated mocks; don't call it directly.
+///
 /// One comparable argument of a mock call's key. Generated code builds these with `arg(_:)`.
 public struct Argument: @unchecked Sendable, CustomStringConvertible {
     enum Kind {
@@ -8,7 +10,9 @@ public struct Argument: @unchecked Sendable, CustomStringConvertible {
     }
 
     let kind: Kind
+    /// The argument's type name, used in failure messages.
     public let typeName: String
+    /// The argument's value, described for failure messages.
     public let description: String
 
     init<T: Equatable>(equatable value: T) {
@@ -54,14 +58,22 @@ public struct Argument: @unchecked Sendable, CustomStringConvertible {
     }
 }
 
+/// Used by generated mocks; don't call it directly.
+///
+/// Matches an `Equatable` argument with `==`.
 public func arg<T: Equatable>(_ value: T) -> Argument {
     Argument(equatable: value)
 }
 
+/// Used by generated mocks; don't call it directly.
+///
+/// Matches an `Equatable` class instance with `==` rather than by identity.
 public func arg<T: AnyObject & Equatable>(_ value: T) -> Argument {
     Argument(equatable: value)
 }
 
+/// Used by generated mocks; don't call it directly.
+///
 /// Class-bound generic and existential contexts. The dynamic class may still be
 /// `Equatable`, so check that first and fall back to identity.
 public func arg<T: AnyObject>(_ value: T) -> Argument {
@@ -71,6 +83,8 @@ public func arg<T: AnyObject>(_ value: T) -> Argument {
     return Argument(identity: value)
 }
 
+/// Used by generated mocks; don't call it directly.
+///
 /// Generic and existential contexts. Decided at runtime, because the generator
 /// only sees syntax and cannot prove `Equatable` conformance.
 @_disfavoredOverload
@@ -84,10 +98,16 @@ public func arg<T>(_ value: T) -> Argument {
     return Argument(unsupported: value)
 }
 
+/// Used by generated mocks; don't call it directly.
+///
+/// Matches a tuple of `Equatable` values element by element.
 public func arg<each T: Equatable>(_ value: (repeat each T)) -> Argument {
     Argument(equatable: TupleBox(repeat each value))
 }
 
+/// Used by generated mocks; don't call it directly.
+///
+/// Matches a generic method's concrete type parameter, such as `T.self`.
 public func arg<T>(type: T.Type) -> Argument {
     Argument(type: type)
 }
