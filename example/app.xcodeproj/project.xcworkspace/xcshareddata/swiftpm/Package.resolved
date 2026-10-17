@@ -1,5 +1,5 @@
 {
-  "originHash" : "17e8dc234145378fdb907338240e247ea90a31d47aa30891912ad56b77375d2c",
+  "originHash" : "2395a62c81b29d8001b8a4ae018c1cdbacb88e6d162574318d70da5b1d4ef6af",
   "pins" : [
     {
       "identity" : "swift-syntax",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
         "version" : "604.0.0"
+      }
+    },
+    {
+      "identity" : "swiftmockito",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gytisptasinskas/SwiftMockito.git",
+      "state" : {
+        "revision" : "3f692946fe7a53bc13d3610d27a891e07e17f58c",
+        "version" : "0.1.0"
       }
     }
   ],

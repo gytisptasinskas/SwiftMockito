@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		6CA477E3308387A800D8EBFB /* SwiftMockito in Frameworks */ = {isa = PBXBuildFile; productRef = 6CA477E1308387A800D8EBFB /* SwiftMockito */; };
+		6CA4785D3083D3C700D8EBFB /* SwiftMockito in Frameworks */ = {isa = PBXBuildFile; productRef = 6CA4785C3083D3C700D8EBFB /* SwiftMockito */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -47,7 +47,7 @@
 		6CA477BB308387A800D8EBFB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				6CA477E3308387A800D8EBFB /* SwiftMockito in Frameworks */,
+				6CA4785D3083D3C700D8EBFB /* SwiftMockito in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -103,15 +103,15 @@
 			buildRules = (
 			);
 			dependencies = (
+				6CA4785F3083D43500D8EBFB /* PBXTargetDependency */,
 				6CA477C0308387A800D8EBFB /* PBXTargetDependency */,
-				6CA477E4308387A800D8EBFB /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				6CA477C1308387A800D8EBFB /* appTests */,
 			);
 			name = appTests;
 			packageProductDependencies = (
-				6CA477E1308387A800D8EBFB /* SwiftMockito */,
+				6CA4785C3083D3C700D8EBFB /* SwiftMockito */,
 			);
 			productName = appTests;
 			productReference = 6CA477BE308387A800D8EBFB /* appTests.xctest */;
@@ -146,7 +146,7 @@
 			mainGroup = 6CA477A8308387A700D8EBFB;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				6CA477E0308387A800D8EBFB /* XCLocalSwiftPackageReference ".." */,
+				6CA4785B3083D3C700D8EBFB /* XCRemoteSwiftPackageReference "SwiftMockito" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6CA477B2308387A700D8EBFB /* Products */;
@@ -191,9 +191,9 @@
 			target = 6CA477B0308387A700D8EBFB /* app */;
 			targetProxy = 6CA477BF308387A800D8EBFB /* PBXContainerItemProxy */;
 		};
-		6CA477E4308387A800D8EBFB /* PBXTargetDependency */ = {
+		6CA4785F3083D43500D8EBFB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			productRef = 6CA477E2308387A800D8EBFB /* SwiftMockitoPlugin */;
+			productRef = 6CA4785E3083D43500D8EBFB /* SwiftMockitoPlugin */;
 		};
 /* End PBXTargetDependency section */
 
@@ -450,22 +450,26 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		6CA477E0308387A800D8EBFB /* XCLocalSwiftPackageReference ".." */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ..;
+/* Begin XCRemoteSwiftPackageReference section */
+		6CA4785B3083D3C700D8EBFB /* XCRemoteSwiftPackageReference "SwiftMockito" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gytisptasinskas/SwiftMockito.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
 		};
-/* End XCLocalSwiftPackageReference section */
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		6CA477E1308387A800D8EBFB /* SwiftMockito */ = {
+		6CA4785C3083D3C700D8EBFB /* SwiftMockito */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 6CA477E0308387A800D8EBFB /* XCLocalSwiftPackageReference ".." */;
+			package = 6CA4785B3083D3C700D8EBFB /* XCRemoteSwiftPackageReference "SwiftMockito" */;
 			productName = SwiftMockito;
 		};
-		6CA477E2308387A800D8EBFB /* SwiftMockitoPlugin */ = {
+		6CA4785E3083D43500D8EBFB /* SwiftMockitoPlugin */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 6CA477E0308387A800D8EBFB /* XCLocalSwiftPackageReference ".." */;
+			package = 6CA4785B3083D3C700D8EBFB /* XCRemoteSwiftPackageReference "SwiftMockito" */;
 			productName = "plugin:SwiftMockitoPlugin";
 		};
 /* End XCSwiftPackageProductDependency section */

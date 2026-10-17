@@ -25,7 +25,7 @@ appTests/
 
 ⌘U launches the app to host the tests. `appApp` checks for `XCTestConfigurationFilePath` and shows nothing in that case, so a test run sends no requests.
 
-The project uses the package from the repository root (`..`) as a local package, so it always builds against the code in this checkout.
+The project adds SwiftMockito from GitHub (`https://github.com/gytisptasinskas/SwiftMockito`, up to next major from 0.1.0), the same way your own app would. It builds against the released version, not the code in this checkout: library changes reach the example after a new release tag and File > Packages > Update to Latest Package Versions.
 
 From the command line:
 
