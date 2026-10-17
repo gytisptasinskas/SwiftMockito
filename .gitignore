@@ -10,3 +10,4 @@ DerivedData/
 .netrc
 /IntegrationTests/*/.build
 .swiftpm/
+/docs/superpowers
