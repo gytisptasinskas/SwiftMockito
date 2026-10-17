@@ -39,17 +39,20 @@ In an Xcode project, add the package, add `SwiftMockitoPlugin` under the test ta
 
 ## Generating mocks
 
-Mark the protocols you want to mock in a test file:
+Mark the protocols a test suite mocks, on the suite itself:
 
 ```swift
 import SwiftMockito
 @testable import App
 
 @GenerateMock(Client.self)
-enum Mocks {}
+struct UserRepositoryTests {
+    let client = MockClient()
+    // …
+}
 ```
 
-`@SwiftMockito.GenerateMock(…)` works too. The build plugin finds `Client` in your test target's dependencies and generates a `MockClient` class with the same signatures, effects and access level. Protocols declared `internal` need `@testable import` of their module, as above.
+`@SwiftMockito.GenerateMock(…)` works too. The marker can sit on any declaration in the test target, such as a suite or an empty `enum Mocks {}`. Mocks belong to the whole test target, so several suites can mark the same protocol and still share one `MockClient`. The build plugin finds `Client` in your test target's dependencies and generates a `MockClient` class with the same signatures, effects and access level. Protocols declared `internal` need `@testable import` of their module, as above.
 
 The examples below mock this protocol and use it through a `UserRepository`:
 

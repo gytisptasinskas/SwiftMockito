@@ -4,6 +4,7 @@ import SwiftMockito
 
 /// `PostDetailViewModel` loads the author and comments for one post, and likes it
 /// through a completion-handler API. Each test's comment names the SwiftMockito feature it shows.
+@GenerateMock(PostService.self)
 @MainActor
 struct PostDetailViewModelTests {
     let service = MockPostService()

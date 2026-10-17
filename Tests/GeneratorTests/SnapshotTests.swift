@@ -59,13 +59,16 @@ func generate(marking names: [String], module: String = "SwiftMockitoTests") -> 
         #expect(file.components(separatedBy: "\n").count == 3)   // comment, #error, trailing newline
     }
 
-    @Test func duplicateMockNamesCollide() {
-        let marker = SourceInput(path: "/v/M.swift", module: "T", text: "@GenerateMock(Client.self)\nenum A {}\n@GenerateMock(Client.self)\nenum B {}\n")
-        let result = Generator.generate(GeneratorConfiguration(markedPaths: [marker.path],
-            inputs: [marker] + fixtureInputs(), testModule: "T", outputDirectory: "/unused"))
-        #expect(result.diagnostics == [GeneratorDiagnostic(severity: .error,
-            message: "MockClient is generated twice; remove the duplicate @GenerateMock(Client.self)",
-            path: "/v/M.swift", line: 3, column: 1)])
+    /// Each suite can name the protocols it mocks, as Flutter's `@GenerateMocks` does per test file;
+    /// the target still gets one `MockClient`.
+    @Test func repeatedMarkersForOneProtocolGenerateOneMock() {
+        let list = SourceInput(path: "/v/ListTests.swift", module: "T", text: "@GenerateMock(Client.self)\nstruct ListTests {}\n")
+        let detail = SourceInput(path: "/v/DetailTests.swift", module: "T",
+                                 text: "@GenerateMock(Client.self, Catalog.self)\n@MainActor\nstruct DetailTests {}\n")
+        let result = Generator.generate(GeneratorConfiguration(markedPaths: [list.path, detail.path],
+            inputs: [list, detail] + fixtureInputs(), testModule: "T", outputDirectory: "/unused"))
+        #expect(result.diagnostics.isEmpty)
+        #expect(result.files.keys.sorted() == ["MockCatalog.swift", "MockClient.swift"])
     }
 
     @Test func failedProtocolStillWritesAnErrorFile() {

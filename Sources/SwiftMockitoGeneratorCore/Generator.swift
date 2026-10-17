@@ -32,10 +32,8 @@ public enum Generator {
 
         for marker in index.markers(in: Set(configuration.markedPaths)) {
             let fileName = "Mock\(marker.protocolName).swift"
-            guard files[fileName] == nil else {
-                diagnostics.append(.error("Mock\(marker.protocolName) is generated twice; remove the duplicate @GenerateMock(\(marker.protocolName).self)", at: marker))
-                continue
-            }
+            // Several suites may mark the same protocol; the test target gets one mock.
+            guard files[fileName] == nil else { continue }
             if !configuration.expectedFiles.isEmpty, !configuration.expectedFiles.contains(fileName) {
                 // The file is still written; the build fails on this error rather than on a missing output.
                 diagnostics.append(.error("\(fileName) was not declared by the build plugin (the marker could not be read by the plugin's scanner); write each argument of @GenerateMock(...) as Name.self, with no comments inside the parentheses", at: marker))

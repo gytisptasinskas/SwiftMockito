@@ -4,6 +4,7 @@ import SwiftMockito
 
 /// `PostListViewModel` with its only dependency, `PostService`, replaced by the
 /// generated `MockPostService`. Each test's comment names the SwiftMockito feature it shows.
+@GenerateMock(PostService.self)
 @MainActor
 struct PostListViewModelTests {
     let service = MockPostService()

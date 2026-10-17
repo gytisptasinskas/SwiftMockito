@@ -11,7 +11,6 @@ app/
   PostDetailViewModel.swift  detail screen: author, comments, like
   PostListView.swift, PostDetailView.swift, appApp.swift
 appTests/
-  Mocks.swift                @GenerateMock(PostService.self): the only mock "code"
   Fixtures.swift             sample models and an Offline error
   PostListViewModelTests.swift
   PostDetailViewModelTests.swift
@@ -39,15 +38,21 @@ xcodebuild test -project app.xcodeproj -scheme app \
 
 ## Where the mock comes from
 
-[`appTests/Mocks.swift`](appTests/Mocks.swift) is the whole setup:
+Each test suite names the protocol it mocks, on the suite itself. This is the whole setup:
 
 ```swift
 import SwiftMockito
 @testable import app
 
 @GenerateMock(PostService.self)
-enum Mocks {}
+@MainActor
+struct PostListViewModelTests {
+    let service = MockPostService()
+    // …
+}
 ```
+
+`PostDetailViewModelTests` carries the same marker. Mocks belong to the whole test target, so both suites share one generated `MockPostService`.
 
 The `appTests` target links `SwiftMockito` and runs `SwiftMockitoPlugin` (Build Phases > Run Build Tool Plug-ins). On each build, the plugin finds `PostService` in the `app` target's sources and writes `MockPostService` into DerivedData. Add a method to `PostService` and the mock picks it up on the next build.
 
