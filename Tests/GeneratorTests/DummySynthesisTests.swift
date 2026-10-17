@@ -124,4 +124,24 @@ private func generateP(_ source: String) -> GeneratorResult {
         let result = generateP("struct S { var a, b: Int; var c: String { didSet {} }; var d: Int = 1 }\nprotocol P { func s() -> S }")
         #expect(try #require(result.files["MockP.swift"]).contains("S(a: Dummies.resolve(Int.self, for: \"S.a\"), b: Dummies.resolve(Int.self, for: \"S.b\"), c: Dummies.resolve(String.self, for: \"S.c\"))"))
     }
+
+    @Test func privateStoredPropertyHidesTheMemberwiseInitializer() throws {
+        let result = generateP("struct S2 { var a: Int; private var d: Int? }\nprotocol P { func s() -> S2 }")
+        #expect(result.diagnostics.map(\.message) == [
+            "MockP.s(): cannot build a dummy S2 (no accessible initializer); call provideDummy(_:) with a S2 before stubbing or verifying it"
+        ])
+        #expect(try #require(result.files["MockP.swift"]).contains("_dummyS2") == false)
+    }
+
+    @Test func explicitInitializerWorksDespiteAPrivateStoredProperty() throws {
+        let result = generateP("struct S2 { var a: Int; private var d: Int?; init(a: Int) { self.a = a } }\nprotocol P { func s() -> S2 }")
+        #expect(result.diagnostics.isEmpty)
+        #expect(try #require(result.files["MockP.swift"]).contains("S2(a: Dummies.resolve(Int.self, for: \"S2.init.a\"))"))
+    }
+
+    @Test func privateSetterDoesNotHideTheMemberwiseInitializer() throws {
+        let result = generateP("struct S3 { var a: Int; private(set) var b: Int }\nprotocol P { func s() -> S3 }")
+        #expect(result.diagnostics.isEmpty)
+        #expect(try #require(result.files["MockP.swift"]).contains("S3(a: Dummies.resolve(Int.self, for: \"S3.a\"), b: Dummies.resolve(Int.self, for: \"S3.b\"))"))
+    }
 }
