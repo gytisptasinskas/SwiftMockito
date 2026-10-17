@@ -45,4 +45,11 @@ import Testing
         catalog.notify(nil)
         verify(catalog.notify({})).called(1)
     }
+
+    /// Only the `arg(type: T.self)` prefix separates these: `Int(1)` also casts to `Int?`.
+    @Test func genericTypePrefixSeparatesOptionalFromValue() {
+        catalog.store(1)
+        verifyNever(catalog.store(Optional(1)))
+        verify(catalog.store(1)).called(1)
+    }
 }

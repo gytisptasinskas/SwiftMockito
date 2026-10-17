@@ -92,4 +92,23 @@ import Testing
             _ = MockClient().cached(id: "1")
         }
     }
+
+    @Test func sentinelDummyNeverReachesRepository() async throws {
+        // Process-wide, but dummies are only produced while recording, so this cannot
+        // change other tests' real results.
+        provideDummy(User(id: "DUMMY", name: "Dummy"))
+        when(client.cached(id: "42")).thenReturn(nil)
+        when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+
+        let user = try await sut.user(id: "42")
+
+        #expect(user == .fixture)
+        // verifyInOrder records `fetch` through its placeholder path, which now yields the sentinel.
+        await verifyInOrder {
+            client.cached(id: "42")
+            try await client.fetch(id: "42")
+            try client.save(.fixture)
+        }
+        verifyNoMoreInteractions(client)
+    }
 }
