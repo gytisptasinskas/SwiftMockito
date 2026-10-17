@@ -8,7 +8,7 @@ import Testing
 let fixtures = URL(filePath: #filePath).deletingLastPathComponent()
     .deletingLastPathComponent().appending(path: "SwiftMockitoTests/Fixtures")
 
-/// Every fixture protocol file that exists so far (Store arrives in Task 14).
+/// Every fixture protocol file that exists so far.
 func fixtureInputs() -> [SourceInput] {
     ["Client.swift", "Catalog.swift", "Screen.swift", "Feed.swift", "Edge.swift", "Store.swift"].compactMap { name in
         let url = fixtures.appending(path: name)
@@ -26,7 +26,7 @@ func generate(marking names: [String], module: String = "SwiftMockitoTests") -> 
 }
 
 @Suite struct SnapshotTests {
-    @Test(arguments: ["Client", "Catalog", "Screen", "Feed", "Edge"])
+    @Test(arguments: ["Client", "Catalog", "Screen", "Feed", "Edge", "Store"])
     func generatorReproducesGolden(protocolName: String) throws {
         let result = generate(marking: [protocolName])
         #expect(result.diagnostics.isEmpty)

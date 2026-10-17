@@ -35,15 +35,8 @@ struct MockEmitter {
     // MARK: Members
 
     private func emitMethod(_ m: Method, _ w: inout CodeWriter) {
-        let generics = m.genericParameters.isEmpty ? "" : "<" + m.genericParameters.map { p in
-            p.constraint.map { "\(p.name): \($0)" } ?? p.name
-        }.joined(separator: ", ") + ">"
-        let params = m.parameters.map { declaration($0, subscriptStyle: false) }.joined(separator: ", ")
-        let effects = (m.isAsync ? " async" : "") + (m.isThrowing ? " throws" : "")
-        let returns = m.returnType.map { " -> \($0)" } ?? ""
-        let whereClause = m.genericWhereClause.map { " \($0)" } ?? ""
         let key = keyList(genericTypes: m.genericParameters.map(\.name), parameters: m.parameters)
-        w.block("\(model.access)\(nonsending(m.isAsync))func \(m.name)\(generics)(\(params))\(effects)\(returns)\(whereClause)") { w in
+        w.block("\(model.access)\(nonsending(m.isAsync))func \(methodSignature(m))") { w in
             emitBody(identity: m.identity, key: key, args: argsList(m.parameters.map(\.name)),
                      isAsync: m.isAsync, isThrowing: m.isThrowing, returnType: m.returnType,
                      genericNames: Set(m.genericParameters.map(\.name)), &w)
@@ -137,16 +130,6 @@ struct MockEmitter {
         isAsync && model.globalActor == nil ? "nonisolated(nonsending) " : ""
     }
 
-    /// Methods: `_ name: T` / `label name: T` / `name: T`. Subscripts: `name: T` means no label.
-    private func declaration(_ p: Parameter, subscriptStyle: Bool) -> String {
-        let type = p.isVariadic ? "\(p.type)..." : p.type
-        switch p.label {
-        case nil: return subscriptStyle ? "\(p.name): \(type)" : "_ \(p.name): \(type)"
-        case p.name?: return subscriptStyle ? "\(p.name) \(p.name): \(type)" : "\(p.name): \(type)"
-        case let label?: return "\(label) \(p.name): \(type)"
-        }
-    }
-
     private func keyList(genericTypes: [String], parameters: [Parameter]) -> String {
         let types = genericTypes.map { "arg(type: \($0).self)" }
         let values = parameters.filter { !$0.isClosure }.map { p in
@@ -182,4 +165,27 @@ private func hasTopLevelArrow(_ type: String) -> Bool {
         previous = character
     }
     return false
+}
+
+/// `name<T: C>(params) async throws -> R where …`: a method's signature as the mock and its
+/// protocol dummies declare it.
+func methodSignature(_ m: Method) -> String {
+    let generics = m.genericParameters.isEmpty ? "" : "<" + m.genericParameters.map { p in
+        p.constraint.map { "\(p.name): \($0)" } ?? p.name
+    }.joined(separator: ", ") + ">"
+    let params = m.parameters.map { declaration($0, subscriptStyle: false) }.joined(separator: ", ")
+    let effects = (m.isAsync ? " async" : "") + (m.isThrowing ? " throws" : "")
+    let returns = m.returnType.map { " -> \($0)" } ?? ""
+    let whereClause = m.genericWhereClause.map { " \($0)" } ?? ""
+    return "\(m.name)\(generics)(\(params))\(effects)\(returns)\(whereClause)"
+}
+
+/// Methods: `_ name: T` / `label name: T` / `name: T`. Subscripts: `name: T` means no label.
+func declaration(_ p: Parameter, subscriptStyle: Bool) -> String {
+    let type = p.isVariadic ? "\(p.type)..." : p.type
+    switch p.label {
+    case nil: return subscriptStyle ? "\(p.name): \(type)" : "_ \(p.name): \(type)"
+    case p.name?: return subscriptStyle ? "\(p.name) \(p.name): \(type)" : "\(p.name): \(type)"
+    case let label?: return "\(label) \(p.name): \(type)"
+    }
 }
