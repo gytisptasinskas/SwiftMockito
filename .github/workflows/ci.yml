@@ -1,0 +1,23 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Runtime and generator tests
+        run: swift test
+      - name: Plugin end-to-end
+        run: swift test --package-path IntegrationTests/PluginFixture
+      - name: Checked-in mocks are current
+        run: bash IntegrationTests/CheckedInMocks/check.sh
+      - name: Public API has no matchers
+        run: bash Scripts/check-public-api.sh
+      - name: Xcode plugin compiles
+        run: xcodebuild -scheme SwiftMockito-Package -destination 'platform=macOS' -skipMacroValidation -skipPackagePluginValidation build
