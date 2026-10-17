@@ -8,6 +8,8 @@ when(client.cached(id: "42")).thenReturn(.fixture)
 verify(client.cached(id: "42")).called(1)
 ```
 
+> **Proof of concept.** SwiftMockito tests an idea: Mockito-style mock generation for Swift, where you mark a protocol and a build plugin generates its mock. It is not production-ready yet, and its API may change.
+
 ## Requirements
 
 Requires Swift 6.2+ and macOS 26 / iOS 26 (`Task.immediate`). Tested with Swift 6.4 (Xcode 27) on macOS 27; earlier 6.x toolchains are untested. Use Swift 6 language mode.
