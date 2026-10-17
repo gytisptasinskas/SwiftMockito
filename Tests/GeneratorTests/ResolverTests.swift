@@ -9,7 +9,7 @@ let markerFile = SourceInput(path: "/t/Mocks.swift", module: "AppTests", text: "
     enum Mocks {}
     """)
 
-func resolve(_ source: String, marker index: Int = 0) -> Result<MockModel, [GeneratorDiagnostic]> {
+func resolve(_ source: String, marker index: Int = 0) -> Result<MockModel, GeneratorFailure> {
     let idx = SourceIndex([markerFile, SourceInput(path: "/a/C.swift", module: "App", text: source)])
     return ProtocolResolver(index: idx).resolve(idx.markers(in: ["/t/Mocks.swift"])[index], testModule: "AppTests")
 }
@@ -87,30 +87,30 @@ func methods(_ model: MockModel) -> [Method] {
         ("func f(_ x: () throws -> Void) rethrows", "Client.f: rethrows is not supported"),
     ])
     func unsupportedRequirementsAreErrorsAtTheMarker(requirement: String, message: String) {
-        guard case .failure(let diagnostics) = resolve("protocol Client { \(requirement) }") else {
+        guard case .failure(let failure) = resolve("protocol Client { \(requirement) }") else {
             Issue.record("expected failure"); return
         }
-        #expect(diagnostics == [GeneratorDiagnostic(severity: .error, message: message, path: "/t/Mocks.swift", line: 4, column: 1)])
+        #expect(failure.diagnostics == [GeneratorDiagnostic(severity: .error, message: message, path: "/t/Mocks.swift", line: 4, column: 1)])
     }
 
     @Test func actorProtocolIsUnsupported() {
-        guard case .failure(let diagnostics) = resolve("protocol Client: Actor {}") else { Issue.record("expected failure"); return }
-        #expect(diagnostics.map(\.message) == ["Client: Actor-constrained protocols are not supported"])
+        guard case .failure(let failure) = resolve("protocol Client: Actor {}") else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == ["Client: Actor-constrained protocols are not supported"])
     }
 
     @Test func missingProtocolIsAnError() {
-        guard case .failure(let diagnostics) = resolve("") else { Issue.record("expected failure"); return }
-        #expect(diagnostics.map(\.message) == ["Client: protocol not found in the test target or its dependencies (protocols from binary frameworks are not supported)"])
+        guard case .failure(let failure) = resolve("") else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == ["Client: protocol not found in the test target or its dependencies (protocols from binary frameworks are not supported)"])
     }
 
     @Test func unknownInheritedProtocolIsAnError() {
-        guard case .failure(let diagnostics) = resolve("protocol Client: CustomStringConvertible {}") else { Issue.record("expected failure"); return }
-        #expect(diagnostics.map(\.message) == ["Client: inherited protocol CustomStringConvertible not found in sources"])
+        guard case .failure(let failure) = resolve("protocol Client: CustomStringConvertible {}") else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == ["Client: inherited protocol CustomStringConvertible not found in sources"])
     }
 
     @Test func memberNamedLikeMockInternalsCollides() {
-        guard case .failure(let diagnostics) = resolve("protocol Client { var runtime: Int { get } }") else { Issue.record("expected failure"); return }
-        #expect(diagnostics.map(\.message) == ["Client.runtime collides with SwiftMockito's Mock.runtime"])
+        guard case .failure(let failure) = resolve("protocol Client { var runtime: Int { get } }") else { Issue.record("expected failure"); return }
+        #expect(failure.diagnostics.map(\.message) == ["Client.runtime collides with SwiftMockito's Mock.runtime"])
     }
 
     @Test func globalActorAndAccessAreCarried() throws {
@@ -127,6 +127,12 @@ func methods(_ model: MockModel) -> [Method] {
         }
         #expect(latest.getterAsync && !latest.getterThrows && !latest.hasSetter)
         #expect(config.getterThrows && !config.getterAsync && !config.hasSetter)
+    }
+
+    @Test func packageProtocolKeepsPackageAccess() throws {
+        let model = try resolve("package protocol Client { func f() }").get()
+        #expect(model.access == "package ")
+        #expect(model.imports.last == "import App")
     }
 
     @Test func diagnosticFormat() {

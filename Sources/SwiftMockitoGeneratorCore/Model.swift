@@ -70,7 +70,7 @@ enum Member: Equatable {
 struct MockModel {
     let protocolName: String
     let mockName: String
-    let access: String
+    let access: String        // "public ", "package " or "" (matches the protocol)
     let globalActor: String?
     let module: String
     let imports: [String]

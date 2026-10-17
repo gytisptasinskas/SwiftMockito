@@ -26,5 +26,7 @@ public struct GeneratorDiagnostic: Error, Sendable, Equatable, CustomStringConve
     }
 }
 
-// `Result<_, [GeneratorDiagnostic]>` (and `Result.get()`) needs the failure type to be an `Error`.
-extension Array: @retroactive Error where Element == GeneratorDiagnostic {}
+/// The failure of a resolve: every diagnostic found for one marker.
+struct GeneratorFailure: Error {
+    let diagnostics: [GeneratorDiagnostic]
+}
