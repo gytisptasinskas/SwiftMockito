@@ -20,7 +20,7 @@ Add the package to `Package.swift`, link `SwiftMockito` to your test target, and
 
 ```swift
 dependencies: [
-    .package(path: "../SwiftMockito"),
+    .package(url: "https://github.com/gytisptasinskas/SwiftMockito", from: "0.1.0"),
 ],
 targets: [
     .testTarget(
@@ -31,9 +31,9 @@ targets: [
 ]
 ```
 
-Once the package is published, replace the path dependency with `.package(url: "<repository URL>", from: "0.1.0")`.
+To work against a local checkout, use `.package(path: "../SwiftMockito")` instead.
 
-In an Xcode project, add the package, add `SwiftMockitoPlugin` under the test target's Build Phases > Run Build Tool Plug-ins, and link `SwiftMockito` to the test target. See [docs/xcode-plugin-verification.md](docs/xcode-plugin-verification.md) for the step-by-step setup. The first build asks you to trust the SwiftMockito macro and plugin; choose Trust & Enable. On CI, pass `-skipMacroValidation -skipPackagePluginValidation` to `xcodebuild`.
+In an Xcode project, add the package (File > Add Package Dependencies, `https://github.com/gytisptasinskas/SwiftMockito`), add `SwiftMockitoPlugin` under the test target's Build Phases > Run Build Tool Plug-ins, and link `SwiftMockito` to the test target. See [docs/xcode-plugin-verification.md](docs/xcode-plugin-verification.md) for the step-by-step setup. The first build asks you to trust the SwiftMockito macro and plugin; choose Trust & Enable. On CI, pass `-skipMacroValidation -skipPackagePluginValidation` to `xcodebuild`.
 
 ## Example app
 
