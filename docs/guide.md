@@ -8,6 +8,7 @@ The full reference. For setup and a first test, start with the [README](../READM
 - [Exact matching](#exact-matching)
 - [Unstubbed calls](#unstubbed-calls)
 - [Dummies](#dummies)
+- [XCTest](#xctest)
 - [Not supported](#not-supported)
 - [Known limitations](#known-limitations)
 
@@ -40,6 +41,23 @@ protocol Client {
     func load(id: String, completion: @escaping (Result<User, Error>) -> Void)
 }
 ```
+
+### Associated types
+
+A protocol with associated types gets a generic mock. Pick the concrete types when you create it:
+
+```swift
+protocol Repository {
+    associatedtype Item: Equatable
+    associatedtype ID = String
+    func item(id: ID) -> Item?
+}
+
+let repository = MockRepository<User, String>()
+when(repository.item(id: "42")).thenReturn(.fixture)
+```
+
+Constraints on an associated type carry over to the generic parameter. Associated types with a `where` clause are not supported. A non-throwing member that returns a bare associated type, such as `var latest: Item { get }`, needs `provideDummy` for each concrete type you stub, like a generic method.
 
 ### Checked-in mocks (CLI)
 
@@ -209,8 +227,8 @@ A call that matches no stub behaves according to the member:
 | Member | Result |
 |---|---|
 | Throwing | Throws `MissingStubError`. |
-| Non-throwing, returns a value | Reports the failure (member, actual arguments, configured stubs, location), **then traps, which ends the whole test process**. |
-| Returns `Void` | Recorded, then returns normally. |
+| Non-throwing, returns a value | Fails the test (member, actual arguments, configured stubs, location) and returns a dummy value, so the rest of the run continues. It traps only if no dummy exists for the return type. |
+| Returns `Void` | Recorded, then returns normally. If it takes an escaping callback, a warning (not a failure) says the callback is never called, since code waiting for it would hang. |
 
 ```swift
 @Test func missingStubOnThrowingMemberThrows() async {
@@ -223,7 +241,7 @@ A call that matches no stub behaves according to the member:
 }
 ```
 
-Stub every non-throwing member that returns a value, or the whole test run stops at the first one you forgot.
+A forgotten stub fails only the test it happens in: the call returns a dummy (see Dummies below), so the code under test keeps going and the other tests still run. Expect odd follow-on results in that test, since the dummy is a placeholder such as `0`, `""` or `nil`.
 
 The same applies while recording: a non-throwing member whose return type has no dummy (see Dummies below) is reported as `MissingDummyError`, then traps.
 
@@ -257,11 +275,33 @@ provideDummy(Sub() as Base)
 
 If a non-throwing member is recorded and no dummy exists for its return type, SwiftMockito reports `MissingDummyError` (the type and the member, with a hint to call `provideDummy`) **and then traps, which ends the whole test process**.
 
+## XCTest
+
+Everything works the same from an `XCTestCase`. Failures are reported with `XCTFail` at the line that called `when` or `verify`, and closures may capture `self`:
+
+```swift
+final class UserRepositoryXCTests: XCTestCase {
+    let client = MockClient()
+
+    func testLoadsUser() async throws {
+        when { try await self.client.fetch(id: "42") }.thenReturn(.fixture)
+
+        let user = try await UserRepository(client: client).user(id: "42")
+
+        XCTAssertEqual(user, .fixture)
+        verify { try await self.client.fetch(id: "42") }.called(1)
+    }
+}
+```
+
+Mocks of `@MainActor` protocols are used from a `@MainActor` test case.
+
 ## Not supported
 
 - Argument matchers: no `any()`, wildcards, predicates or argument captors.
 - Default stubs or "nice mock" behavior. An unstubbed call that returns a value fails.
-- Static requirements, initializers, `Self` requirements and associated types.
+- Static requirements, initializers and `Self` requirements.
+- Associated types with a `where` clause.
 - Subscripts with `async` or `throws` getters, and generic subscripts.
 - `rethrows` members.
 - Objective-C protocols (`@objc`, or `optional` requirements).

@@ -105,7 +105,7 @@ Use the plain form for synchronous calls, and the `{ … }` closure form when th
 - **No argument matchers.** Arguments are compared by value: `fetch(id: "42")` only matches
   `"42"`. Closure arguments are ignored when matching. See <doc:Matching>.
 - **Stub every call that returns a value.** If a non-throwing call that returns a value has no
-  stub, the whole test run stops. An unstubbed throwing call throws ``MissingStubError``, and an
+  stub, that test fails and the call returns a dummy value. An unstubbed throwing call throws ``MissingStubError``, and an
   unstubbed `Void` call returns normally. See <doc:Stubbing#Unstubbed-calls>.
 - **The newest stub wins** when several stubs match a call.
 - **Callbacks in `thenAnswer` need typed parameters**:

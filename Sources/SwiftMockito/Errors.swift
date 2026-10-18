@@ -4,7 +4,7 @@ import Foundation
 ///
 /// An unstubbed throwing member that returns a value throws this error to the code under
 /// test. (A member that returns `Void` returns normally instead, and an unstubbed non-throwing
-/// member that returns a value reports the same message and then traps.)
+/// member that returns a value reports the same message as a test failure and returns a dummy.)
 ///
 /// ```swift
 /// @Test func missingStubOnThrowingMemberThrows() async {

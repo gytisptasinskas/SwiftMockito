@@ -25,7 +25,10 @@ struct MockEmitter {
         model.imports.forEach { w.line($0) }
         w.line()
         if let actor = model.globalActor { w.line("@\(actor)") }
-        w.block("\(model.access)final class \(model.mockName): Mock, \(model.protocolName), @unchecked Sendable") { w in
+        let generics = model.genericParameters.isEmpty ? "" : "<" + model.genericParameters.map { p in
+            p.constraint.map { "\(p.name): \($0)" } ?? p.name
+        }.joined(separator: ", ") + ">"
+        w.block("\(model.access)final class \(model.mockName)\(generics): Mock, \(model.protocolName), @unchecked Sendable") { w in
             w.block("\(model.access)init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column)") { w in
                 w.line("super.init(name: \"\(model.mockName)\", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))")
             }
@@ -36,13 +39,18 @@ struct MockEmitter {
 
     // MARK: Members
 
+    /// Associated types are the mock's generic parameters, so their dummies are unknown, like a generic method's.
+    private var associatedNames: Set<String> { Set(model.genericParameters.map(\.name)) }
+
     private func emitMethod(_ m: Method, _ w: inout CodeWriter) {
         let key = keyList(genericTypes: m.genericParameters.map(\.name), parameters: m.parameters)
         w.block("\(model.access)\(nonsending(m.isAsync))func \(methodSignature(m))") { w in
             emitBody(identity: m.identity, key: key, args: argsList(m.parameters.map(\.name)),
                      isAsync: m.isAsync, isThrowing: m.isThrowing, returnType: m.returnType,
-                     genericNames: Set(m.genericParameters.map(\.name)),
-                     nonEscaping: m.parameters.filter(\.isNonEscapingClosure), &w)
+                     genericNames: Set(m.genericParameters.map(\.name)).union(associatedNames),
+                     nonEscaping: m.parameters.filter(\.isNonEscapingClosure),
+                     callbacks: m.returnType == nil ? m.parameters.filter { $0.isClosure && !$0.isNonEscapingClosure } : [],
+                     &w)
         }
     }
 
@@ -51,17 +59,17 @@ struct MockEmitter {
         w.block("\(model.access)\(nonsending(p.getterAsync))var \(p.name): \(p.type)") { w in
             guard p.hasSetter || !getterEffects.isEmpty else {
                 emitBody(identity: p.name, key: "[]", args: "", isAsync: false, isThrowing: false,
-                         returnType: p.type, genericNames: [], &w)
+                         returnType: p.type, genericNames: associatedNames, &w)
                 return
             }
             w.block("get\(getterEffects)") { w in
                 emitBody(identity: p.name, key: "[]", args: "", isAsync: p.getterAsync, isThrowing: p.getterThrows,
-                         returnType: p.type, genericNames: [], &w)
+                         returnType: p.type, genericNames: associatedNames, &w)
             }
             if p.hasSetter {
                 w.block("set") { w in
                     emitBody(identity: "\(p.name)=", key: "[arg(newValue)]", args: ", args: newValue",
-                             isAsync: false, isThrowing: false, returnType: nil, genericNames: [], &w)
+                             isAsync: false, isThrowing: false, returnType: nil, genericNames: associatedNames, &w)
                 }
             }
         }
@@ -75,17 +83,17 @@ struct MockEmitter {
         w.block("\(model.access)subscript(\(params)) -> \(s.returnType)") { w in
             guard s.hasSetter else {
                 emitBody(identity: s.identity, key: key, args: argsList(names), isAsync: false, isThrowing: false,
-                         returnType: s.returnType, genericNames: [], nonEscaping: nonEscaping, &w)
+                         returnType: s.returnType, genericNames: associatedNames, nonEscaping: nonEscaping, &w)
                 return
             }
             w.block("get") { w in
                 emitBody(identity: s.identity, key: key, args: argsList(names), isAsync: false, isThrowing: false,
-                         returnType: s.returnType, genericNames: [], nonEscaping: nonEscaping, &w)
+                         returnType: s.returnType, genericNames: associatedNames, nonEscaping: nonEscaping, &w)
             }
             w.block("set") { w in
                 let setKey = key == "[]" ? "[arg(newValue)]" : String(key.dropLast()) + ", arg(newValue)]"
                 emitBody(identity: "\(s.identity)=", key: setKey, args: argsList(names + ["newValue"]),
-                         isAsync: false, isThrowing: false, returnType: nil, genericNames: [],
+                         isAsync: false, isThrowing: false, returnType: nil, genericNames: associatedNames,
                          nonEscaping: nonEscaping, &w)
             }
         }
@@ -97,7 +105,7 @@ struct MockEmitter {
     /// take escaping values, so each such call is wrapped in one `withoutActuallyEscaping` per parameter.
     private func emitBody(identity: String, key: String, args: String, isAsync: Bool, isThrowing: Bool,
                           returnType: String?, genericNames: Set<String>, nonEscaping: [Parameter] = [],
-                          _ w: inout CodeWriter) {
+                          callbacks: [Parameter] = [], _ w: inout CodeWriter) {
         let effects: String = switch (isAsync, isThrowing) {
         case (true, true): ", effects: [.async, .throwing]"
         case (true, false): ", effects: .async"
@@ -131,7 +139,14 @@ struct MockEmitter {
         }
         let call = isThrowing ? "invokeThrowing" : "invoke"
         let prefix = (isThrowing ? "try " : "") + (isAsync ? "await " : "")
-        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args))"
+        // A missing stub fails the test and returns this dummy instead (throwing members throw instead).
+        let dummy = isThrowing ? nil : returnType.flatMap { type in
+            genericNames.contains(type) ? nil
+                : synthesizer.fallback(for: type, member: member, genericNames: genericNames, warn: false)
+        }
+        // An unstubbed `Void` member never calls its escaping callbacks; the runtime warns, naming them.
+        let callbackList = callbacks.isEmpty ? "" : ", callbacks: \(callbackNames(callbacks))"
+        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args)\(dummy.map { ", dummy: \($0)" } ?? "")\(callbackList))"
         guard !nonEscaping.isEmpty else {
             w.line("return \(prefix)\(dispatch)")
             return
@@ -153,6 +168,20 @@ struct MockEmitter {
             }
         }
         w.line("return \(prefix)dispatch(\((nonEscaping.map(\.name) + ["#isolation"]).joined(separator: ", ")))")
+    }
+
+    /// `["completion"]`. An optional callback counts only when one was passed:
+    /// `handler == nil ? [] : ["handler"]`, or `[…].compactMap { $0 }` when mixed with others.
+    private func callbackNames(_ callbacks: [Parameter]) -> String {
+        let isOptional = { (p: Parameter) in p.type.hasSuffix("?") || p.type.hasSuffix("!") }
+        guard callbacks.contains(where: isOptional) else {
+            return "[\(callbacks.map { "\"\($0.name)\"" }.joined(separator: ", "))]"
+        }
+        if callbacks.count == 1, let only = callbacks.first {
+            return "\(only.name) == nil ? [] : [\"\(only.name)\"]"
+        }
+        let entries = callbacks.map { isOptional($0) ? "\($0.name) == nil ? nil : \"\($0.name)\"" : "\"\($0.name)\"" }
+        return "[\(entries.joined(separator: ", "))].compactMap { $0 }"
     }
 
     /// Nests `withoutActuallyEscaping(x) { x in … }` for each parameter, rebinding it to an escaping

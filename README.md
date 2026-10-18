@@ -10,7 +10,7 @@ verify(client.cached(id: "42")).called(1)
 
 > **Proof of concept.** SwiftMockito tests an idea: Mockito-style mock generation for Swift, where you mark a protocol and a build plugin generates its mock. It is not production-ready yet, and its API may change.
 
-Requires Swift 6.2+ and iOS 26 / macOS 26, in Swift 6 language mode. Tested with Xcode 27.
+Works with Swift Testing and XCTest. Requires Swift 6.2+ and iOS 26 / macOS 26, in Swift 6 language mode. Tested with Xcode 27.
 
 ## Quick start
 
@@ -87,7 +87,7 @@ Use the plain form for synchronous calls, and the `{ … }` closure form when th
 ## Good to know
 
 - **No argument matchers.** Arguments are compared by value: `fetch(id: "42")` only matches `"42"`. Closure arguments are ignored when matching.
-- **Stub every call that returns a value.** If a non-throwing call that returns a value has no stub, the whole test run stops. An unstubbed throwing call throws `MissingStubError`, and an unstubbed `Void` call just returns.
+- **Stub every call that returns a value.** If a non-throwing call that returns a value has no stub, that test fails and the call returns a dummy value. An unstubbed throwing call throws `MissingStubError`, and an unstubbed `Void` call just returns; if it takes a completion handler, you get a warning that the handler is never called.
 - **The newest stub wins** when several stubs match a call.
 - **Callbacks in `thenAnswer` need typed parameters**: `{ (id: String, completion: @escaping (Result<User, Error>) -> Void) in completion(.success(.fixture)) }`.
 - **`@MainActor` protocols** are mocked as `@MainActor` too; stub and verify them from `@MainActor` tests.

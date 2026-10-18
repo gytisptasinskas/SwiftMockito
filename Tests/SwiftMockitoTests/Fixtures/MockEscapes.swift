@@ -100,7 +100,7 @@ final class MockEscapes: Mock, Escapes, @unchecked Sendable {
             return
         }
         return withoutActuallyEscaping(filter) { filter in
-            runtime.invoke("subscribe(_:where:)", key: [], args: handler, filter)
+            runtime.invoke("subscribe(_:where:)", key: [], args: handler, filter, callbacks: ["handler"])
         }
     }
 
