@@ -25,7 +25,10 @@ struct MockEmitter {
         model.imports.forEach { w.line($0) }
         w.line()
         if let actor = model.globalActor { w.line("@\(actor)") }
-        w.block("\(model.access)final class \(model.mockName): Mock, \(model.protocolName), @unchecked Sendable") { w in
+        let generics = model.genericParameters.isEmpty ? "" : "<" + model.genericParameters.map { p in
+            p.constraint.map { "\(p.name): \($0)" } ?? p.name
+        }.joined(separator: ", ") + ">"
+        w.block("\(model.access)final class \(model.mockName)\(generics): Mock, \(model.protocolName), @unchecked Sendable") { w in
             w.block("\(model.access)init(fileID: String = #fileID, filePath: StaticString = #filePath, line: UInt = #line, column: UInt = #column)") { w in
                 w.line("super.init(name: \"\(model.mockName)\", site: CallSite(fileID: fileID, filePath: filePath, line: line, column: column))")
             }
@@ -36,12 +39,15 @@ struct MockEmitter {
 
     // MARK: Members
 
+    /// Associated types are the mock's generic parameters, so their dummies are unknown, like a generic method's.
+    private var associatedNames: Set<String> { Set(model.genericParameters.map(\.name)) }
+
     private func emitMethod(_ m: Method, _ w: inout CodeWriter) {
         let key = keyList(genericTypes: m.genericParameters.map(\.name), parameters: m.parameters)
         w.block("\(model.access)\(nonsending(m.isAsync))func \(methodSignature(m))") { w in
             emitBody(identity: m.identity, key: key, args: argsList(m.parameters.map(\.name)),
                      isAsync: m.isAsync, isThrowing: m.isThrowing, returnType: m.returnType,
-                     genericNames: Set(m.genericParameters.map(\.name)),
+                     genericNames: Set(m.genericParameters.map(\.name)).union(associatedNames),
                      nonEscaping: m.parameters.filter(\.isNonEscapingClosure),
                      callbacks: m.returnType == nil ? m.parameters.filter { $0.isClosure && !$0.isNonEscapingClosure } : [],
                      &w)
@@ -53,17 +59,17 @@ struct MockEmitter {
         w.block("\(model.access)\(nonsending(p.getterAsync))var \(p.name): \(p.type)") { w in
             guard p.hasSetter || !getterEffects.isEmpty else {
                 emitBody(identity: p.name, key: "[]", args: "", isAsync: false, isThrowing: false,
-                         returnType: p.type, genericNames: [], &w)
+                         returnType: p.type, genericNames: associatedNames, &w)
                 return
             }
             w.block("get\(getterEffects)") { w in
                 emitBody(identity: p.name, key: "[]", args: "", isAsync: p.getterAsync, isThrowing: p.getterThrows,
-                         returnType: p.type, genericNames: [], &w)
+                         returnType: p.type, genericNames: associatedNames, &w)
             }
             if p.hasSetter {
                 w.block("set") { w in
                     emitBody(identity: "\(p.name)=", key: "[arg(newValue)]", args: ", args: newValue",
-                             isAsync: false, isThrowing: false, returnType: nil, genericNames: [], &w)
+                             isAsync: false, isThrowing: false, returnType: nil, genericNames: associatedNames, &w)
                 }
             }
         }
@@ -77,17 +83,17 @@ struct MockEmitter {
         w.block("\(model.access)subscript(\(params)) -> \(s.returnType)") { w in
             guard s.hasSetter else {
                 emitBody(identity: s.identity, key: key, args: argsList(names), isAsync: false, isThrowing: false,
-                         returnType: s.returnType, genericNames: [], nonEscaping: nonEscaping, &w)
+                         returnType: s.returnType, genericNames: associatedNames, nonEscaping: nonEscaping, &w)
                 return
             }
             w.block("get") { w in
                 emitBody(identity: s.identity, key: key, args: argsList(names), isAsync: false, isThrowing: false,
-                         returnType: s.returnType, genericNames: [], nonEscaping: nonEscaping, &w)
+                         returnType: s.returnType, genericNames: associatedNames, nonEscaping: nonEscaping, &w)
             }
             w.block("set") { w in
                 let setKey = key == "[]" ? "[arg(newValue)]" : String(key.dropLast()) + ", arg(newValue)]"
                 emitBody(identity: "\(s.identity)=", key: setKey, args: argsList(names + ["newValue"]),
-                         isAsync: false, isThrowing: false, returnType: nil, genericNames: [],
+                         isAsync: false, isThrowing: false, returnType: nil, genericNames: associatedNames,
                          nonEscaping: nonEscaping, &w)
             }
         }
