@@ -88,7 +88,6 @@ func methods(_ model: MockModel) -> [Method] {
     @Test(arguments: [
         ("static func make() -> Int", "Client: static requirements are not supported"),
         ("init()", "Client: initializers are not supported"),
-        ("associatedtype Item", "Client: associated types are not supported"),
         ("func copy() -> Self", "Client: Self requirements are not supported"),
         ("func f() throws(MyError)", "Client.f: typed throws is not supported"),
         ("func f(_ x: () throws -> Void) rethrows", "Client.f: rethrows is not supported"),

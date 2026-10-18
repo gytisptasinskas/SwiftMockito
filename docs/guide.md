@@ -41,6 +41,23 @@ protocol Client {
 }
 ```
 
+### Associated types
+
+A protocol with associated types gets a generic mock. Pick the concrete types when you create it:
+
+```swift
+protocol Repository {
+    associatedtype Item: Equatable
+    associatedtype ID = String
+    func item(id: ID) -> Item?
+}
+
+let repository = MockRepository<User, String>()
+when(repository.item(id: "42")).thenReturn(.fixture)
+```
+
+Constraints on an associated type carry over to the generic parameter. Associated types with a `where` clause are not supported. A non-throwing member that returns a bare associated type, such as `var latest: Item { get }`, needs `provideDummy` for each concrete type you stub, like a generic method.
+
 ### Checked-in mocks (CLI)
 
 The same generator runs from the command line, for CI or for mocks you commit to the repository:
@@ -261,7 +278,8 @@ If a non-throwing member is recorded and no dummy exists for its return type, Sw
 
 - Argument matchers: no `any()`, wildcards, predicates or argument captors.
 - Default stubs or "nice mock" behavior. An unstubbed call that returns a value fails.
-- Static requirements, initializers, `Self` requirements and associated types.
+- Static requirements, initializers and `Self` requirements.
+- Associated types with a `where` clause.
 - Subscripts with `async` or `throws` getters, and generic subscripts.
 - `rethrows` members.
 - Objective-C protocols (`@objc`, or `optional` requirements).

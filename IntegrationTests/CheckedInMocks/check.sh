@@ -5,12 +5,12 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 fixtures="$root/Tests/SwiftMockitoTests/Fixtures"
-printf '@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Edge.self, Store.self, Shapes.self, Escapes.self)\nenum Mocks {}\n' > "$out/Mocks.swift"
+printf '@GenerateMock(Client.self, Catalog.self, Screen.self, Feed.self, Edge.self, Store.self, Shapes.self, Escapes.self, Repository.self)\nenum Mocks {}\n' > "$out/Mocks.swift"
 swift run --package-path "$root" SwiftMockitoGenerator generate \
   --test-module SwiftMockitoTests --output "$out/generated" --marked "$out/Mocks.swift" \
   --source-dir "SwiftMockitoTests=$fixtures"
 status=0
-for name in MockClient MockCatalog MockScreen MockFeed MockEdge MockStore MockShapes MockEscapes; do
+for name in MockClient MockCatalog MockScreen MockFeed MockEdge MockStore MockShapes MockEscapes MockRepository; do
   if [ ! -f "$out/generated/$name.swift" ]; then
     echo "missing generated $name.swift"
     status=1
