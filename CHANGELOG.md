@@ -4,6 +4,22 @@ All notable changes to SwiftMockito. The format follows [Keep a Changelog](https
 
 ## [Unreleased]
 
+### Added
+
+- Mocks of protocols with associated types: `protocol Repository { associatedtype Item }` generates a generic `MockRepository<Item>`. Constraints carry over; associated types with a `where` clause are still unsupported. ([#8](https://github.com/gytisptasinskas/SwiftMockito/pull/8))
+- A warning, not a failure, when an unstubbed `Void` member is called with a completion handler it will never call, since code waiting for it would hang. ([#6](https://github.com/gytisptasinskas/SwiftMockito/pull/6))
+- XCTest acceptance tests and an XCTest section in the guide. ([#7](https://github.com/gytisptasinskas/SwiftMockito/pull/7))
+- CI tests the example app against the pull request's code (`Scripts/test-example.sh`). ([#9](https://github.com/gytisptasinskas/SwiftMockito/pull/9))
+
+### Changed
+
+- A forgotten stub on a non-throwing member that returns a value now fails only that test and returns a dummy, instead of ending the whole test process. It still traps when no dummy exists for the return type. ([#6](https://github.com/gytisptasinskas/SwiftMockito/pull/6))
+- Mocks from 0.1.0 still compile: the new `MockRuntime` parameters (`dummy:`, `callbacks:`) have defaults. Regenerate them to get the new behaviour.
+
+### Fixed
+
+- The example app adds SwiftMockito from GitHub, so the Xcode app runs the plugin, and it opens in Xcode 26 again (project format 77). ([#5](https://github.com/gytisptasinskas/SwiftMockito/pull/5), [#9](https://github.com/gytisptasinskas/SwiftMockito/pull/9))
+
 ## [0.1.0] - 2026-10-17
 
 First release, a proof of concept.
