@@ -131,7 +131,12 @@ struct MockEmitter {
         }
         let call = isThrowing ? "invokeThrowing" : "invoke"
         let prefix = (isThrowing ? "try " : "") + (isAsync ? "await " : "")
-        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args))"
+        // A missing stub fails the test and returns this dummy instead (throwing members throw instead).
+        let dummy = isThrowing ? nil : returnType.flatMap { type in
+            genericNames.contains(type) ? nil
+                : synthesizer.fallback(for: type, member: member, genericNames: genericNames, warn: false)
+        }
+        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args)\(dummy.map { ", dummy: \($0)" } ?? ""))"
         guard !nonEscaping.isEmpty else {
             w.line("return \(prefix)\(dispatch)")
             return

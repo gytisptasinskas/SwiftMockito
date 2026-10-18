@@ -90,10 +90,14 @@ enum Mocks {}
         #expect(client.currentUser.id == "real")
     }
 
-    @Test func unstubbedNonThrowingValueTraps() async {
-        await #expect(processExitsWith: .failure) {
-            _ = MockClient().cached(id: "1")
+    @Test func unstubbedCallFailsTheTestAndReturnsADummy() {
+        var user: User?? = .none
+        withKnownIssue {
+            user = .some(MockClient().cached(id: "1"))
+        } matching: { issue in
+            issue.description.contains("MockClient.cached(id:)")
         }
+        #expect(user == .some(nil))
     }
 
     @Test func sentinelDummyNeverReachesRepository() async throws {

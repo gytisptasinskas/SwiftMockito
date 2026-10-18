@@ -209,7 +209,7 @@ A call that matches no stub behaves according to the member:
 | Member | Result |
 |---|---|
 | Throwing | Throws `MissingStubError`. |
-| Non-throwing, returns a value | Reports the failure (member, actual arguments, configured stubs, location), **then traps, which ends the whole test process**. |
+| Non-throwing, returns a value | Fails the test (member, actual arguments, configured stubs, location) and returns a dummy value, so the rest of the run continues. It traps only if no dummy exists for the return type. |
 | Returns `Void` | Recorded, then returns normally. |
 
 ```swift
@@ -223,7 +223,7 @@ A call that matches no stub behaves according to the member:
 }
 ```
 
-Stub every non-throwing member that returns a value, or the whole test run stops at the first one you forgot.
+A forgotten stub fails only the test it happens in: the call returns a dummy (see Dummies below), so the code under test keeps going and the other tests still run. Expect odd follow-on results in that test, since the dummy is a placeholder such as `0`, `""` or `nil`.
 
 The same applies while recording: a non-throwing member whose return type has no dummy (see Dummies below) is reported as `MissingDummyError`, then traps.
 

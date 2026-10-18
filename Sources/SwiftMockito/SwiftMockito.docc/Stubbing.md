@@ -94,7 +94,7 @@ A call that matches no stub behaves according to the member:
 |---|---|
 | Returns `Void` | Recorded, then returns normally. |
 | Throwing, returns a value | Throws ``MissingStubError``. |
-| Non-throwing, returns a value | Reports the failure (member, actual arguments, configured stubs, location), **then traps, which ends the whole test process**. |
+| Non-throwing, returns a value | Fails the test (member, actual arguments, configured stubs, location) and returns a dummy value, so the rest of the run continues. It traps only if no dummy exists for the return type. |
 
 ```swift
 @Test func missingStubOnThrowingMemberThrows() async {
@@ -107,8 +107,9 @@ A call that matches no stub behaves according to the member:
 }
 ```
 
-Stub every non-throwing member that returns a value, or the whole test run stops at the first
-one you forgot.
+A forgotten stub fails only the test it happens in: the call returns a dummy (see
+<doc:DummyValues>), so the code under test keeps going and the other tests still run. Expect
+odd follow-on results in that test, since the dummy is a placeholder such as `0`, `""` or `nil`.
 
 The same applies while recording: a non-throwing member whose return type has no dummy is
 reported as ``MissingDummyError``, then traps. See <doc:DummyValues>.

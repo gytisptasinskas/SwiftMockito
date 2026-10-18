@@ -23,8 +23,9 @@ public final class MockRuntime: @unchecked Sendable {
     /// Used by generated mocks; don't call it directly.
     ///
     /// Records a call to a synchronous, non-throwing member and returns its stubbed result.
-    /// Traps when no stub matches and the member returns a value.
-    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) -> R {
+    /// When no stub matches and the member returns a value, fails the test and returns a dummy
+    /// (a registered one, a built-in, or `dummy`); traps only when none exists.
+    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A, dummy: (() -> R)? = nil) -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value):
             return value
@@ -34,14 +35,15 @@ public final class MockRuntime: @unchecked Sendable {
         case .error(let error):
             trapUnexpected(error, member)
         case .missing(let missing):
-            Reporter.trap(missing.description, at: site)
+            return dummyForMissingStub(missing, dummy)
         }
     }
 
     /// Used by generated mocks; don't call it directly.
     ///
     /// Records a call to an `async`, non-throwing member and returns its stubbed result.
-    nonisolated(nonsending) public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A) async -> R {
+    /// A missing stub is handled like the synchronous form.
+    nonisolated(nonsending) public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A, dummy: (() -> R)? = nil) async -> R {
         switch resolve(member, key: key, R.self) {
         case .value(let value):
             return value
@@ -50,7 +52,7 @@ public final class MockRuntime: @unchecked Sendable {
         case .error(let error):
             trapUnexpected(error, member)
         case .missing(let missing):
-            Reporter.trap(missing.description, at: site)
+            return dummyForMissingStub(missing, dummy)
         }
     }
 
@@ -160,6 +162,16 @@ public final class MockRuntime: @unchecked Sendable {
             },
             site: site
         )
+    }
+
+    /// Fails the current test and returns a dummy, so one forgotten stub doesn't stop the whole run.
+    /// Traps only when no dummy exists for `R`.
+    private func dummyForMissingStub<R>(_ missing: MissingStubError, _ dummy: (() -> R)?) -> R {
+        guard let value = Dummies.placeholder(R.self, fallback: dummy) else {
+            Reporter.trap("\(missing.description) No dummy \(String(reflecting: R.self)) exists to return instead; register one with provideDummy(_:).", at: site)
+        }
+        Reporter.fail(missing.description, at: site)
+        return value
     }
 
     private func qualified(_ member: String) -> String { "\(mockName).\(member)" }

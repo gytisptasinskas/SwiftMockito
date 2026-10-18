@@ -17,6 +17,25 @@ private func generateP(_ source: String) -> GeneratorResult {
         #expect(result.files["MockP.swift"]?.contains("Dummies.resolve(CGSize.self, for: \"MockP.size()\")") == true)
     }
 
+    /// A missing stub fails the test and returns this dummy, so the dispatch call carries it too.
+    @Test func dispatchPassesTheSynthesizedDummy() throws {
+        let result = generateP("""
+            struct S { let a: Int }
+            protocol P {
+                func s() -> S
+                func n() -> Int
+                func make<T>() -> T
+                func load() async -> S
+            }
+            """)
+        let file = try #require(result.files["MockP.swift"])
+        #expect(file.contains("return runtime.invoke(\"s()\", key: [], dummy: Self._dummyS)"))
+        #expect(file.contains("return await runtime.invoke(\"load()\", key: [], dummy: Self._dummyS)"))
+        #expect(file.contains("return runtime.invoke(\"n()\", key: [])"))
+        #expect(file.contains("return runtime.invoke(\"make()\", key: [arg(type: T.self)])"))
+        #expect(result.diagnostics.count == 1)   // only the generic return, not one per use
+    }
+
     @Test func genericReturnWarns() {
         #expect(generateP("protocol P { func make<T>() -> T }").diagnostics.map(\.message) == [
             "MockP.make(): cannot build a dummy for generic return type T; call provideDummy(_:) for each concrete T you stub"
