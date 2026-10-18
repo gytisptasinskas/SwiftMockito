@@ -78,6 +78,6 @@ final class MockCatalog: Mock, Catalog, @unchecked Sendable {
             capture.record(runtime, "notify(_:)", key: [], args: handler)
             return
         }
-        return runtime.invoke("notify(_:)", key: [], args: handler)
+        return runtime.invoke("notify(_:)", key: [], args: handler, callbacks: handler == nil ? [] : ["handler"])
     }
 }

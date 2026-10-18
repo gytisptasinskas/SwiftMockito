@@ -44,3 +44,52 @@ private struct Thing: Equatable { let value: Int }
         }
     }
 }
+
+/// An unstubbed member that takes a callback never calls it, so code waiting for the callback hangs.
+/// The mock warns about it (without failing the test, since "verify it was called" needs no stub).
+@Suite struct UnstubbedCallbackTests {
+    @Test func unstubbedCallbackMemberWarns() {
+        let warnings = MessageBox()
+        let failures = MessageBox()
+        let mock = Harness()
+        Reporter.$warningSink.withValue({ message, _ in warnings.append(message) }) {
+            Reporter.$sink.withValue({ message, _ in failures.append(message) }) {
+                let completion: @Sendable (Int) -> Void = { _ in }
+                let _: Void = mock.runtime.invoke("load(completion:)", key: [], args: completion, callbacks: ["completion"])
+            }
+        }
+        #expect(failures.messages.isEmpty)
+        #expect(warnings.messages == [
+            "Harness.load(completion:) has no stub, so its `completion` callback is never called; code that waits for it will hang. Stub it with thenAnswer and call the callback."
+        ])
+    }
+
+    @Test func stubbedCallbackMemberDoesNotWarn() {
+        let warnings = MessageBox()
+        let mock = Harness()
+        stub(mock.runtime, "load(completion:)", key: [], argumentTypes: (@Sendable (Int) -> Void).self, returning: Void.self)
+            .thenAnswer { (completion: @escaping @Sendable (Int) -> Void) in completion(1) }
+        Reporter.$warningSink.withValue({ message, _ in warnings.append(message) }) {
+            let _: Void = mock.runtime.invoke("load(completion:)", key: [], args: { @Sendable (_: Int) in }, callbacks: ["completion"])
+        }
+        #expect(warnings.messages.isEmpty)
+    }
+
+    @Test func unstubbedVoidMemberWithoutCallbacksDoesNotWarn() async {
+        let warnings = MessageBox()
+        let mock = Harness()
+        await Reporter.$warningSink.withValue({ message, _ in warnings.append(message) }) {
+            let _: Void = await mock.runtime.invoke("ping()", key: [])
+        }
+        #expect(warnings.messages.isEmpty)
+    }
+
+    @Test func unstubbedThrowingCallbackMemberWarns() throws {
+        let warnings = MessageBox()
+        let mock = Harness()
+        try Reporter.$warningSink.withValue({ message, _ in warnings.append(message) }) {
+            let _: Void = try mock.runtime.invokeThrowing("send(done:)", key: [], args: { @Sendable in }, callbacks: ["done"])
+        }
+        #expect(warnings.messages.count == 1)
+    }
+}

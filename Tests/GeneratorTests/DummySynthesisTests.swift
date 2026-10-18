@@ -36,6 +36,28 @@ private func generateP(_ source: String) -> GeneratorResult {
         #expect(result.diagnostics.count == 1)   // only the generic return, not one per use
     }
 
+    /// An unstubbed `Void` member never calls its escaping callbacks, so the runtime is told their names to warn.
+    @Test func dispatchNamesEscapingCallbacksOfVoidMembers() throws {
+        let result = generateP("""
+            protocol P {
+                func load(id: Int, completion: @escaping (Int) -> Void)
+                func send(done: @escaping () -> Void) async throws
+                func each(_ body: (Int) -> Void)
+                func value(then: @escaping () -> Void) -> Int
+                func notify(_ handler: (() -> Void)?)
+                func both(first: (() -> Void)?, second: @escaping () -> Void)
+            }
+            """)
+        let file = try #require(result.files["MockP.swift"])
+        #expect(file.contains("return runtime.invoke(\"load(id:completion:)\", key: [arg(id)], args: id, completion, callbacks: [\"completion\"])"))
+        #expect(file.contains("return try await runtime.invokeThrowing(\"send(done:)\", key: [], args: done, callbacks: [\"done\"])"))
+        #expect(!file.contains("callbacks: [\"body\"]"))   // non-escaping: called during the call, if at all
+        #expect(!file.contains("callbacks: [\"then\"]"))   // returns a value: a missing stub already fails
+        // An optional callback only counts when one was passed.
+        #expect(file.contains("args: handler, callbacks: handler == nil ? [] : [\"handler\"])"))
+        #expect(file.contains("args: first, second, callbacks: [first == nil ? nil : \"first\", \"second\"].compactMap { $0 })"))
+    }
+
     @Test func genericReturnWarns() {
         #expect(generateP("protocol P { func make<T>() -> T }").diagnostics.map(\.message) == [
             "MockP.make(): cannot build a dummy for generic return type T; call provideDummy(_:) for each concrete T you stub"

@@ -210,7 +210,7 @@ A call that matches no stub behaves according to the member:
 |---|---|
 | Throwing | Throws `MissingStubError`. |
 | Non-throwing, returns a value | Fails the test (member, actual arguments, configured stubs, location) and returns a dummy value, so the rest of the run continues. It traps only if no dummy exists for the return type. |
-| Returns `Void` | Recorded, then returns normally. |
+| Returns `Void` | Recorded, then returns normally. If it takes an escaping callback, a warning (not a failure) says the callback is never called, since code waiting for it would hang. |
 
 ```swift
 @Test func missingStubOnThrowingMemberThrows() async {

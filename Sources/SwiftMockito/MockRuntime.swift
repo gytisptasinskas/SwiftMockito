@@ -24,9 +24,11 @@ public final class MockRuntime: @unchecked Sendable {
     ///
     /// Records a call to a synchronous, non-throwing member and returns its stubbed result.
     /// When no stub matches and the member returns a value, fails the test and returns a dummy
-    /// (a registered one, a built-in, or `dummy`); traps only when none exists.
-    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A, dummy: (() -> R)? = nil) -> R {
-        switch resolve(member, key: key, R.self) {
+    /// (a registered one, a built-in, or `dummy`); traps only when none exists. `callbacks` names
+    /// the member's escaping closure parameters: an unstubbed `Void` call warns that they never run.
+    public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A, dummy: (() -> R)? = nil,
+                                  callbacks: [String] = []) -> R {
+        switch resolve(member, key: key, R.self, callbacks: callbacks) {
         case .value(let value):
             return value
         case .answer(let answer):
@@ -43,8 +45,9 @@ public final class MockRuntime: @unchecked Sendable {
     ///
     /// Records a call to an `async`, non-throwing member and returns its stubbed result.
     /// A missing stub is handled like the synchronous form.
-    nonisolated(nonsending) public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A, dummy: (() -> R)? = nil) async -> R {
-        switch resolve(member, key: key, R.self) {
+    nonisolated(nonsending) public func invoke<each A, R>(_ member: String, key: [Argument], args: repeat each A, dummy: (() -> R)? = nil,
+                                                          callbacks: [String] = []) async -> R {
+        switch resolve(member, key: key, R.self, callbacks: callbacks) {
         case .value(let value):
             return value
         case .answer(let answer):
@@ -60,8 +63,9 @@ public final class MockRuntime: @unchecked Sendable {
     ///
     /// Records a call to a synchronous, throwing member and returns or throws its stubbed result.
     /// Throws ``MissingStubError`` when no stub matches and the member returns a value.
-    public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) throws -> R {
-        switch resolve(member, key: key, R.self) {
+    public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A,
+                                          callbacks: [String] = []) throws -> R {
+        switch resolve(member, key: key, R.self, callbacks: callbacks) {
         case .value(let value):
             return value
         case .answer(let answer):
@@ -77,8 +81,9 @@ public final class MockRuntime: @unchecked Sendable {
     /// Used by generated mocks; don't call it directly.
     ///
     /// Records a call to an `async`, throwing member and returns or throws its stubbed result.
-    nonisolated(nonsending) public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A) async throws -> R {
-        switch resolve(member, key: key, R.self) {
+    nonisolated(nonsending) public func invokeThrowing<each A, R>(_ member: String, key: [Argument], args: repeat each A,
+                                                                  callbacks: [String] = []) async throws -> R {
+        switch resolve(member, key: key, R.self, callbacks: callbacks) {
         case .value(let value): return value
         case .answer(let answer): return try await run(answer, (repeat each args))
         case .error(let error): throw error
@@ -124,7 +129,8 @@ public final class MockRuntime: @unchecked Sendable {
         case missing(MissingStubError)
     }
 
-    private func resolve<R>(_ member: String, key: [Argument], _: R.Type) -> Resolution<R> {
+    /// `callbacks` names the member's escaping closure parameters, for the unstubbed-callback warning.
+    private func resolve<R>(_ member: String, key: [Argument], _: R.Type, callbacks: [String]) -> Resolution<R> {
         // User `==` runs inside `matches`, so it must not run under the lock.
         let candidates: [StubRecord] = lock.withLock {
             calls.append(CallRecord(id: CallClock.next(), member: member, key: key, verified: false))
@@ -137,7 +143,10 @@ public final class MockRuntime: @unchecked Sendable {
             }
         }
         guard let (stub, index) = found else {
-            if R.self == Void.self { return .value(() as! R) }
+            if R.self == Void.self {
+                if !callbacks.isEmpty { warnUnstubbedCallbacks(member, callbacks) }
+                return .value(() as! R)
+            }
             return .missing(missingStubError(member, key: key))
         }
         switch stub.response {
@@ -172,6 +181,12 @@ public final class MockRuntime: @unchecked Sendable {
         }
         Reporter.fail(missing.description, at: site)
         return value
+    }
+
+    private func warnUnstubbedCallbacks(_ member: String, _ callbacks: [String]) {
+        let names = callbacks.map { "`\($0)`" }.joined(separator: ", ")
+        let noun = callbacks.count == 1 ? "callback is" : "callbacks are"
+        Reporter.warn("\(qualified(member)) has no stub, so its \(names) \(noun) never called; code that waits for it will hang. Stub it with thenAnswer and call the callback.", at: site)
     }
 
     private func qualified(_ member: String) -> String { "\(mockName).\(member)" }

@@ -63,7 +63,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
             capture.record(runtime, "load(id:completion:)", key: [arg(id)], args: id, completion)
             return
         }
-        return runtime.invoke("load(id:completion:)", key: [arg(id)], args: id, completion)
+        return runtime.invoke("load(id:completion:)", key: [arg(id)], args: id, completion, callbacks: ["completion"])
     }
 
     private static func _dummyUser() -> User {
