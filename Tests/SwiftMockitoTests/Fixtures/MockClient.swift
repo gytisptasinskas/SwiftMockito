@@ -29,7 +29,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
             capture.record(runtime, "currentUser", key: [], returns: User.self)
             return Dummies.resolve(User.self, for: "MockClient.currentUser", fallback: Self._dummyUser)
         }
-        return runtime.invoke("currentUser", key: [])
+        return runtime.invoke("currentUser", key: [], dummy: Self._dummyUser)
     }
 
     func cached(id: String) -> User? {
@@ -63,7 +63,7 @@ final class MockClient: Mock, Client, @unchecked Sendable {
             capture.record(runtime, "load(id:completion:)", key: [arg(id)], args: id, completion)
             return
         }
-        return runtime.invoke("load(id:completion:)", key: [arg(id)], args: id, completion)
+        return runtime.invoke("load(id:completion:)", key: [arg(id)], args: id, completion, callbacks: ["completion"])
     }
 
     private static func _dummyUser() -> User {

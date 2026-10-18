@@ -73,8 +73,12 @@ enum Mocks {}
     }
 
     @Test func unstubbedVoidMemberReturns() {
-        client.load(id: "1") { _ in Issue.record("completion must not run") }
+        let warnings = MessageBox()
+        Reporter.$warningSink.withValue({ message, _ in warnings.append(message) }) {
+            client.load(id: "1") { _ in Issue.record("completion must not run") }
+        }
         verify(client.load(id: "1", completion: { _ in })).called(1)
+        #expect(warnings.messages.count == 1)   // the completion is never called, so code waiting for it would hang
     }
 
     @Test func resetForgetsEverything() {
@@ -90,10 +94,14 @@ enum Mocks {}
         #expect(client.currentUser.id == "real")
     }
 
-    @Test func unstubbedNonThrowingValueTraps() async {
-        await #expect(processExitsWith: .failure) {
-            _ = MockClient().cached(id: "1")
+    @Test func unstubbedCallFailsTheTestAndReturnsADummy() {
+        var user: User?? = .none
+        withKnownIssue {
+            user = .some(MockClient().cached(id: "1"))
+        } matching: { issue in
+            issue.description.contains("MockClient.cached(id:)")
         }
+        #expect(user == .some(nil))
     }
 
     @Test func sentinelDummyNeverReachesRepository() async throws {

@@ -12,7 +12,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
             capture.record(runtime, "observed()", key: [], returns: Observed.self)
             return Dummies.resolve(Observed.self, for: "MockShapes.observed()", fallback: Self._dummyObserved)
         }
-        return runtime.invoke("observed()", key: [])
+        return runtime.invoke("observed()", key: [], dummy: Self._dummyObserved)
     }
 
     func pair() -> Pair {
@@ -20,7 +20,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
             capture.record(runtime, "pair()", key: [], returns: Pair.self)
             return Dummies.resolve(Pair.self, for: "MockShapes.pair()", fallback: Self._dummyPair)
         }
-        return runtime.invoke("pair()", key: [])
+        return runtime.invoke("pair()", key: [], dummy: Self._dummyPair)
     }
 
     func defaults() -> Defaults {
@@ -28,7 +28,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
             capture.record(runtime, "defaults()", key: [], returns: Defaults.self)
             return Dummies.resolve(Defaults.self, for: "MockShapes.defaults()", fallback: Self._dummyDefaults)
         }
-        return runtime.invoke("defaults()", key: [])
+        return runtime.invoke("defaults()", key: [], dummy: Self._dummyDefaults)
     }
 
     func payload() -> Payload {
@@ -36,7 +36,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
             capture.record(runtime, "payload()", key: [], returns: Payload.self)
             return Dummies.resolve(Payload.self, for: "MockShapes.payload()", fallback: Self._dummyPayload)
         }
-        return runtime.invoke("payload()", key: [])
+        return runtime.invoke("payload()", key: [], dummy: Self._dummyPayload)
     }
 
     func subBox() -> SubBox {
@@ -44,7 +44,7 @@ final class MockShapes: Mock, Shapes, @unchecked Sendable {
             capture.record(runtime, "subBox()", key: [], returns: SubBox.self)
             return Dummies.resolve(SubBox.self, for: "MockShapes.subBox()", fallback: Self._dummySubBox)
         }
-        return runtime.invoke("subBox()", key: [])
+        return runtime.invoke("subBox()", key: [], dummy: Self._dummySubBox)
     }
 
     private static func _dummyObserved() -> Observed {
