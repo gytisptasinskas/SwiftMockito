@@ -10,7 +10,7 @@ verify(client.cached(id: "42")).called(1)
 
 > **Proof of concept.** SwiftMockito tests an idea: Mockito-style mock generation for Swift, where you mark a protocol and a build plugin generates its mock. It is not production-ready yet, and its API may change.
 
-Requires Swift 6.2+ and iOS 26 / macOS 26, in Swift 6 language mode. Tested with Xcode 27.
+Works with Swift Testing and XCTest. Requires Swift 6.2+ and iOS 26 / macOS 26, in Swift 6 language mode. Tested with Xcode 27.
 
 ## Quick start
 

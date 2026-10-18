@@ -8,6 +8,7 @@ The full reference. For setup and a first test, start with the [README](../READM
 - [Exact matching](#exact-matching)
 - [Unstubbed calls](#unstubbed-calls)
 - [Dummies](#dummies)
+- [XCTest](#xctest)
 - [Not supported](#not-supported)
 - [Known limitations](#known-limitations)
 
@@ -256,6 +257,27 @@ provideDummy(Sub() as Base)
 ```
 
 If a non-throwing member is recorded and no dummy exists for its return type, SwiftMockito reports `MissingDummyError` (the type and the member, with a hint to call `provideDummy`) **and then traps, which ends the whole test process**.
+
+## XCTest
+
+Everything works the same from an `XCTestCase`. Failures are reported with `XCTFail` at the line that called `when` or `verify`, and closures may capture `self`:
+
+```swift
+final class UserRepositoryXCTests: XCTestCase {
+    let client = MockClient()
+
+    func testLoadsUser() async throws {
+        when { try await self.client.fetch(id: "42") }.thenReturn(.fixture)
+
+        let user = try await UserRepository(client: client).user(id: "42")
+
+        XCTAssertEqual(user, .fixture)
+        verify { try await self.client.fetch(id: "42") }.called(1)
+    }
+}
+```
+
+Mocks of `@MainActor` protocols are used from a `@MainActor` test case.
 
 ## Not supported
 
