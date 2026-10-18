@@ -42,7 +42,9 @@ struct MockEmitter {
             emitBody(identity: m.identity, key: key, args: argsList(m.parameters.map(\.name)),
                      isAsync: m.isAsync, isThrowing: m.isThrowing, returnType: m.returnType,
                      genericNames: Set(m.genericParameters.map(\.name)),
-                     nonEscaping: m.parameters.filter(\.isNonEscapingClosure), &w)
+                     nonEscaping: m.parameters.filter(\.isNonEscapingClosure),
+                     callbacks: m.returnType == nil ? m.parameters.filter { $0.isClosure && !$0.isNonEscapingClosure } : [],
+                     &w)
         }
     }
 
@@ -97,7 +99,7 @@ struct MockEmitter {
     /// take escaping values, so each such call is wrapped in one `withoutActuallyEscaping` per parameter.
     private func emitBody(identity: String, key: String, args: String, isAsync: Bool, isThrowing: Bool,
                           returnType: String?, genericNames: Set<String>, nonEscaping: [Parameter] = [],
-                          _ w: inout CodeWriter) {
+                          callbacks: [Parameter] = [], _ w: inout CodeWriter) {
         let effects: String = switch (isAsync, isThrowing) {
         case (true, true): ", effects: [.async, .throwing]"
         case (true, false): ", effects: .async"
@@ -131,7 +133,14 @@ struct MockEmitter {
         }
         let call = isThrowing ? "invokeThrowing" : "invoke"
         let prefix = (isThrowing ? "try " : "") + (isAsync ? "await " : "")
-        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args))"
+        // A missing stub fails the test and returns this dummy instead (throwing members throw instead).
+        let dummy = isThrowing ? nil : returnType.flatMap { type in
+            genericNames.contains(type) ? nil
+                : synthesizer.fallback(for: type, member: member, genericNames: genericNames, warn: false)
+        }
+        // An unstubbed `Void` member never calls its escaping callbacks; the runtime warns, naming them.
+        let callbackList = callbacks.isEmpty ? "" : ", callbacks: \(callbackNames(callbacks))"
+        let dispatch = "runtime.\(call)(\"\(identity)\", key: \(key)\(args)\(dummy.map { ", dummy: \($0)" } ?? "")\(callbackList))"
         guard !nonEscaping.isEmpty else {
             w.line("return \(prefix)\(dispatch)")
             return
@@ -153,6 +162,20 @@ struct MockEmitter {
             }
         }
         w.line("return \(prefix)dispatch(\((nonEscaping.map(\.name) + ["#isolation"]).joined(separator: ", ")))")
+    }
+
+    /// `["completion"]`. An optional callback counts only when one was passed:
+    /// `handler == nil ? [] : ["handler"]`, or `[…].compactMap { $0 }` when mixed with others.
+    private func callbackNames(_ callbacks: [Parameter]) -> String {
+        let isOptional = { (p: Parameter) in p.type.hasSuffix("?") || p.type.hasSuffix("!") }
+        guard callbacks.contains(where: isOptional) else {
+            return "[\(callbacks.map { "\"\($0.name)\"" }.joined(separator: ", "))]"
+        }
+        if callbacks.count == 1, let only = callbacks.first {
+            return "\(only.name) == nil ? [] : [\"\(only.name)\"]"
+        }
+        let entries = callbacks.map { isOptional($0) ? "\($0.name) == nil ? nil : \"\($0.name)\"" : "\"\($0.name)\"" }
+        return "[\(entries.joined(separator: ", "))].compactMap { $0 }"
     }
 
     /// Nests `withoutActuallyEscaping(x) { x in … }` for each parameter, rebinding it to an escaping

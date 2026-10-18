@@ -24,4 +24,15 @@ private final class RecordingLogger: Logger {
         #expect(store.pair() == (1, "x"))
         #expect(throws: ClientError.offline) { try store.result().get() }
     }
+
+    /// The generated mock hands its synthesized dummy to the runtime, which returns it after failing the test.
+    @Test func unstubbedCallReturnsTheGeneratedDummy() {
+        var status: Status?
+        withKnownIssue {
+            status = MockStore().status()
+        } matching: { issue in
+            issue.description.contains("MockStore.status()")
+        }
+        #expect(status == .active(since: Date(timeIntervalSince1970: 0)))
+    }
 }

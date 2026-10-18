@@ -35,7 +35,7 @@ final class MockEdge: Mock, Edge, @unchecked Sendable {
             capture.record(runtime, "handler()", key: [], returns: ((Int) -> Void).self)
             return Dummies.resolve(((Int) -> Void).self, for: "MockEdge.handler()", fallback: { { _ in fatalError("SwiftMockito: dummy closure must not be called") } })
         }
-        return runtime.invoke("handler()", key: [])
+        return runtime.invoke("handler()", key: [], dummy: { { _ in fatalError("SwiftMockito: dummy closure must not be called") } })
     }
 
     var transform: ((String) -> String)? {
