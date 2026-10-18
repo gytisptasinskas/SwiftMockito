@@ -105,6 +105,10 @@ The [guide](docs/guide.md) covers everything else:
 - generating mocks you commit to the repo, from the command line
 - what isn't supported, and known limitations
 
+## Changes
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## Development
 
 ```bash
