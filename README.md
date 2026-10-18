@@ -112,4 +112,5 @@ swift test                                                 # runtime and generat
 swift test --package-path IntegrationTests/PluginFixture   # plugin end to end
 bash IntegrationTests/CheckedInMocks/check.sh              # checked-in mocks are current
 bash Scripts/check-public-api.sh                           # the public API has no matcher symbols
+bash Scripts/test-example.sh                               # example app tests against this checkout
 ```
