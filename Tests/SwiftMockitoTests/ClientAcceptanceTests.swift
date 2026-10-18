@@ -20,7 +20,7 @@ enum Mocks {}
 
     @Test func doesNotSaveWhenFetchFails() async {
         when(client.cached(id: "42")).thenReturn(nil)
-        when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+        await when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
 
         await #expect(throws: ClientError.offline) { try await sut.user(id: "42") }
         verifyNever { try client.save(.fixture) }
@@ -39,7 +39,7 @@ enum Mocks {}
 
     @Test func fetchesAndSavesInOrder() async throws {
         when(client.cached(id: "42")).thenReturn(nil)
-        when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+        await when { try await client.fetch(id: "42") }.thenReturn(.fixture)
 
         _ = try await sut.user(id: "42")
 
@@ -109,7 +109,7 @@ enum Mocks {}
         // change other tests' real results.
         provideDummy(User(id: "DUMMY", name: "Dummy"))
         when(client.cached(id: "42")).thenReturn(nil)
-        when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+        await when { try await client.fetch(id: "42") }.thenReturn(.fixture)
 
         let user = try await sut.user(id: "42")
 

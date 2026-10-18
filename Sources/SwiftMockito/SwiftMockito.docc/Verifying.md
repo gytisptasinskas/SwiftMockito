@@ -12,15 +12,14 @@ the count with ``Verification/called(_:fileID:filePath:line:column:)``,
 
 ```swift
 verify(client.cached(id: "42")).called(1)
-verify { try await client.fetch(id: "42") }.called(atLeast: 1)
+await verify { try await client.fetch(id: "42") }.called(atLeast: 1)
 verifyNever { try client.save(.fixture) }
 verifyNoMoreInteractions(client)
 ```
 
-Like `when`, the plain form is for synchronous, non-throwing members, and the closure form,
-``verify(isolation:fileID:filePath:line:column:_:)``, is for members that need `try` or `await`.
-`verify`, `verifyNever` and `verifyInOrder` need no `await` in front, even when the expression
-inside them does. Each `verify` or `verifyNever` expression must record exactly one mock call;
+Like `when`, the plain form is for synchronous, non-throwing members, and the closure form is
+for members that need `try` or `await`. `verify`, `verifyNever` and `verifyInOrder` take `await`
+in front exactly when a call inside them needs `await`. Each `verify` or `verifyNever` expression must record exactly one mock call;
 zero or several is reported as a misuse at the call site.
 
 ### Properties
@@ -36,15 +35,15 @@ verify(client.token).called(1)   // the getter
 ### Calls that must not happen
 
 ``verifyNever(_:fileID:filePath:line:column:)`` and
-``verifyNever(isolation:fileID:filePath:line:column:_:)`` fail if any call matches, including a
+``verifyNever(fileID:filePath:line:column:_:)-1nkaa`` fail if any call matches, including a
 call that an earlier `verify` already verified.
 
 ### Order
 
-``verifyInOrder(isolation:fileID:filePath:line:column:_:)`` checks relative order only; unrelated
-calls may happen in between, and the lines may call different mocks. It has a synchronous form
-and an `await` form, ``verifyInOrder(fileID:filePath:line:column:_:)``, for async tests. Every
-line is recorded, including `try` and `await` lines, and the function itself does not throw:
+``verifyInOrder(fileID:filePath:line:column:_:)-6njpq`` checks relative order only; unrelated
+calls may happen in between, and the lines may call different mocks. When a line needs `await`,
+use the `await` form, ``verifyInOrder(fileID:filePath:line:column:_:)-vpyp``. Every line is recorded, including `try`
+and `await` lines, and the function itself does not throw:
 
 ```swift
 await verifyInOrder {

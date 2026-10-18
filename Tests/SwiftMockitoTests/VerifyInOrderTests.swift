@@ -102,10 +102,10 @@ import Testing
         } == ["verifyInOrder: SampleMock.decode(_:) has no placeholder return value, so the calls after it could not be recorded. Call provideDummy(_:) for its return type."])
     }
 
-    @MainActor @Test func syncOverloadOnMainActorRecordsAsyncLines() {
+    @MainActor @Test func asyncOverloadOnMainActorReportsAMissingAsyncLine() async {
         _ = mock.cached(id: "1")
-        #expect(failures {
-            verifyInOrder {
+        #expect(await failures {
+            await verifyInOrder {
                 mock.cached(id: "1")
                 try await mock.fetch(id: "2")
             }

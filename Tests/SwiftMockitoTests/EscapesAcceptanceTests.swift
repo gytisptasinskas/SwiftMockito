@@ -23,7 +23,7 @@ import Testing
         escapes.perform { Issue.record("an unstubbed call must not run the closure") }
         await escapes.later { Issue.record("an unstubbed call must not run the closure") }
         verify(escapes.perform({})).called(1)
-        verify { await escapes.later({}) }.called(1)
+        await verify { await escapes.later({}) }.called(1)
     }
 
     @Test func valueArgumentsStillMatchExactly() {
@@ -42,8 +42,8 @@ import Testing
     }
 
     @Test func asyncMembersAnswerWithEveryClosure() async throws {
-        when { await escapes.later({}) }.thenAnswer { (work: @escaping () -> Void) async in work() }
-        when { try await escapes.load(id: "42", { _ in 0 }, { _ in true }) }
+        await when { await escapes.later({}) }.thenAnswer { (work: @escaping () -> Void) async in work() }
+        await when { try await escapes.load(id: "42", { _ in 0 }, { _ in true }) }
             .thenAnswer { (id: String, parse: @escaping (String) -> Int, validate: @escaping (Int) -> Bool) async throws in
                 let value = parse(id)
                 guard validate(value) else { throw ClientError.offline }
@@ -63,7 +63,7 @@ import Testing
     }
 
     @MainActor @Test func asyncAnswerRunsOnTheCallersActor() async {
-        when { await escapes.later({}) }.thenAnswer { (work: @escaping () -> Void) async in
+        await when { await escapes.later({}) }.thenAnswer { (work: @escaping () -> Void) async in
             MainActor.assertIsolated()
             work()
         }

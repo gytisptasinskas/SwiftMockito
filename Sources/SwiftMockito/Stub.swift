@@ -42,12 +42,12 @@ enum StoredResponse {
 
 /// Configures the response of one recorded call.
 ///
-/// ``when(_:fileID:filePath:line:column:)`` and ``when(isolation:fileID:filePath:line:column:_:)``
+/// ``when(_:fileID:filePath:line:column:)``, ``when(fileID:filePath:line:column:_:)-1fm7k`` and ``when(fileID:filePath:line:column:_:)-3fqwn``
 /// return a `Stub`. Finish it with ``thenReturn(_:)``, ``thenThrow(_:)`` or `thenAnswer(_:)`:
 ///
 /// ```swift
 /// when(client.cached(id: "42")).thenReturn(.fixture)
-/// when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+/// await when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
 /// ```
 ///
 /// `R` is the member's return type. `Failure` is `Never` for members that cannot throw, so
@@ -127,7 +127,7 @@ public struct Stub<R, Failure: Error> {
     /// The closure may `await`, and may throw only when the member can:
     ///
     /// ```swift
-    /// when { try await client.fetch(id: "42") }.thenAnswer { (id: String) async throws in
+    /// await when { try await client.fetch(id: "42") }.thenAnswer { (id: String) async throws in
     ///     try await Task.sleep(for: .milliseconds(10))
     ///     return User(id: id, name: "Gytis")
     /// }
@@ -187,7 +187,7 @@ extension Stub where Failure == any Error {
     /// Computes the result of an `async` throwing member from the call's arguments, without throwing.
     ///
     /// ```swift
-    /// when { try await client.fetch(id: "42") }.thenAnswer { (id: String) async in
+    /// await when { try await client.fetch(id: "42") }.thenAnswer { (id: String) async in
     ///     await Task.yield()
     ///     return User(id: id, name: "Gytis")
     /// }
@@ -208,7 +208,7 @@ extension Stub where Failure == any Error {
     /// Throws `error` on every matching call.
     ///
     /// ```swift
-    /// when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+    /// await when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
     /// ```
     ///
     /// Available only when the stubbed expression can throw. On a member that does not throw,

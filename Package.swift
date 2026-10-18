@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "SwiftMockito",
-    platforms: [.macOS(.v26), .iOS(.v26)],   // Task.immediate (resolved D1)
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "SwiftMockito", targets: ["SwiftMockito"]),
         .executable(name: "SwiftMockitoGenerator", targets: ["SwiftMockitoGenerator"]),

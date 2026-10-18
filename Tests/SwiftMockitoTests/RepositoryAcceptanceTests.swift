@@ -7,7 +7,7 @@ import Testing
 
     @Test func stubsAndVerifiesWithConcreteTypes() async throws {
         when(repository.item(id: "42")).thenReturn(.fixture)
-        when { try await repository.all() }.thenReturn([.fixture])
+        await when { try await repository.all() }.thenReturn([.fixture])
 
         #expect(repository.item(id: "42") == .fixture)
         #expect(try await repository.all() == [.fixture])

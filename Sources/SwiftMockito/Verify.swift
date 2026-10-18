@@ -5,7 +5,7 @@
 ///
 /// ```swift
 /// verify(client.cached(id: "42")).called(1)
-/// verify { try await client.fetch(id: "42") }.called(atLeast: 2)
+/// await verify { try await client.fetch(id: "42") }.called(atLeast: 2)
 /// ```
 ///
 /// The count is the number of matching calls that were not yet verified when `verify` ran.
@@ -94,7 +94,7 @@ public struct Verification {
 /// arguments are left out of the match (see <doc:Matching>).
 ///
 /// For a member that needs `try` or `await`, or for a property setter, use
-/// ``verify(isolation:fileID:filePath:line:column:_:)``.
+/// ``verify(fileID:filePath:line:column:_:)-5w8px`` or ``verify(fileID:filePath:line:column:_:)-6526d``.
 ///
 /// - Parameters:
 ///   - call: The mock call to verify, such as `client.cached(id: "42")`.
@@ -114,22 +114,21 @@ public func verify<R>(
     return applyVerify(exactlyOne("verify", captureAll(site: site) { _ = call() }, site: site), site: site)
 }
 
-/// Checks that a member that needs `try` or `await`, or a property setter, was called.
+/// Checks that a member that needs `try`, or a property setter, was called.
 ///
-/// Write the mock call inside the closure, with its `try` and `await`. `verify` itself needs
-/// neither:
+/// Write the mock call inside the closure, with its `try`. `verify` itself needs no `try`:
 ///
 /// ```swift
-/// verify { try await client.fetch(id: "42") }.called(1)
+/// verify { try client.save(.fixture) }.called(1)
 /// verify { client.token = "new" }.called(1)     // a property setter
 /// ```
 ///
 /// It behaves like ``verify(_:fileID:filePath:line:column:)``: at least one matching,
 /// not yet verified call must have happened, and the matching calls are marked as verified.
-/// The closure must record exactly one mock call.
+/// The closure must record exactly one mock call. For a call that needs `await`, write
+/// `await verify { … }`.
 ///
 /// - Parameters:
-///   - isolation: The caller's actor. Leave the default.
 ///   - fileID: The file of the call site, reported on failure. Leave the default.
 ///   - filePath: The path of the call site, reported on failure. Leave the default.
 ///   - line: The line of the call site, reported on failure. Leave the default.
@@ -138,13 +137,39 @@ public func verify<R>(
 /// - Returns: A ``Verification`` that can check the number of calls.
 @discardableResult
 public func verify<R, E: Error>(
-    isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    _ call: @escaping () async throws(E) -> R
+    _ call: () throws(E) -> R
 ) -> Verification {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let recorded = captureAll("verify", site: site, isolation: isolation) { _ = isolation; _ = try await call() }?.recorded
+    let recorded = captureAll("verify", site: site) { _ = try call() }?.recorded
+    return applyVerify(exactlyOne("verify", recorded, site: site), site: site)
+}
+
+/// Checks that a member that needs `await` was called.
+///
+/// ```swift
+/// await verify { try await client.fetch(id: "42") }.called(1)
+/// ```
+///
+/// It behaves like the synchronous closure form.
+///
+/// - Parameters:
+///   - fileID: The file of the call site, reported on failure. Leave the default.
+///   - filePath: The path of the call site, reported on failure. Leave the default.
+///   - line: The line of the call site, reported on failure. Leave the default.
+///   - column: The column of the call site, reported on failure. Leave the default.
+///   - call: A closure that contains only the mock call to verify.
+/// - Returns: A ``Verification`` that can check the number of calls.
+@_disfavoredOverload
+@discardableResult
+nonisolated(nonsending) public func verify<R, E: Error>(
+    fileID: String = #fileID, filePath: StaticString = #filePath,
+    line: UInt = #line, column: UInt = #column,
+    _ call: () async throws(E) -> R
+) async -> Verification {
+    let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
+    let recorded = await captureAll("verify", site: site) { _ = try await call() }?.recorded
     return applyVerify(exactlyOne("verify", recorded, site: site), site: site)
 }
 
@@ -157,7 +182,8 @@ public func verify<R, E: Error>(
 /// Every matching call counts, including calls that an earlier `verify` already verified.
 /// Calls with other arguments are fine.
 ///
-/// For a member that needs `try` or `await`, use ``verifyNever(isolation:fileID:filePath:line:column:_:)``.
+/// For a member that needs `try`, use ``verifyNever(fileID:filePath:line:column:_:)-1nkaa``; for one that needs `await`,
+/// use ``verifyNever(fileID:filePath:line:column:_:)-3xdko``.
 ///
 /// - Parameters:
 ///   - call: The mock call that must not have happened.
@@ -175,30 +201,51 @@ public func verifyNever<R>(
     applyVerifyNever(exactlyOne("verifyNever", captureAll(site: site) { _ = call() }, site: site), site: site)
 }
 
-/// Checks that a member that needs `try` or `await`, or a property setter, was never called with these arguments.
+/// Checks that a member that needs `try`, or a property setter, was never called with these arguments.
 ///
 /// ```swift
 /// verifyNever { try client.save(.fixture) }
-/// verifyNever { try await client.fetch(id: "7") }
 /// ```
 ///
 /// Every matching call counts, including calls that an earlier `verify` already verified.
+/// For a call that needs `await`, write `await verifyNever { … }`.
 ///
 /// - Parameters:
-///   - isolation: The caller's actor. Leave the default.
 ///   - fileID: The file of the call site, reported on failure. Leave the default.
 ///   - filePath: The path of the call site, reported on failure. Leave the default.
 ///   - line: The line of the call site, reported on failure. Leave the default.
 ///   - column: The column of the call site, reported on failure. Leave the default.
 ///   - call: A closure that contains only the mock call that must not have happened.
 public func verifyNever<R, E: Error>(
-    isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    _ call: @escaping () async throws(E) -> R
+    _ call: () throws(E) -> R
 ) {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let recorded = captureAll("verifyNever", site: site, isolation: isolation) { _ = isolation; _ = try await call() }?.recorded
+    let recorded = captureAll("verifyNever", site: site) { _ = try call() }?.recorded
+    applyVerifyNever(exactlyOne("verifyNever", recorded, site: site), site: site)
+}
+
+/// Checks that a member that needs `await` was never called with these arguments.
+///
+/// ```swift
+/// await verifyNever { try await client.fetch(id: "7") }
+/// ```
+///
+/// - Parameters:
+///   - fileID: The file of the call site, reported on failure. Leave the default.
+///   - filePath: The path of the call site, reported on failure. Leave the default.
+///   - line: The line of the call site, reported on failure. Leave the default.
+///   - column: The column of the call site, reported on failure. Leave the default.
+///   - call: A closure that contains only the mock call that must not have happened.
+@_disfavoredOverload
+nonisolated(nonsending) public func verifyNever<R, E: Error>(
+    fileID: String = #fileID, filePath: StaticString = #filePath,
+    line: UInt = #line, column: UInt = #column,
+    _ call: () async throws(E) -> R
+) async {
+    let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
+    let recorded = await captureAll("verifyNever", site: site) { _ = try await call() }?.recorded
     applyVerifyNever(exactlyOne("verifyNever", recorded, site: site), site: site)
 }
 
@@ -209,7 +256,7 @@ public func verifyNever<R, E: Error>(
 ///
 /// ```swift
 /// verify(client.cached(id: "42")).called(1)
-/// verify { try await client.fetch(id: "42") }.called(1)
+/// await verify { try await client.fetch(id: "42") }.called(1)
 /// verifyNoMoreInteractions(client)
 /// ```
 ///

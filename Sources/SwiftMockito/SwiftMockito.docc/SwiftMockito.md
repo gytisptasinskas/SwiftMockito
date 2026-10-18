@@ -21,7 +21,7 @@ misuse and failures as test failures at the line that called it, in Swift Testin
 > generation for Swift, where you mark a protocol and a build plugin generates its mock. It is
 > not production-ready yet, and its API may change.
 
-SwiftMockito requires Swift 6.2 or later and iOS 26 or macOS 26, in Swift 6 language mode.
+SwiftMockito requires Swift 6.2 or later and iOS 17 or macOS 14 or later, in Swift 6 language mode.
 
 ## Topics
 
@@ -40,19 +40,22 @@ SwiftMockito requires Swift 6.2 or later and iOS 26 or macOS 26, in Swift 6 lang
 
 - <doc:Stubbing>
 - ``when(_:fileID:filePath:line:column:)``
-- ``when(isolation:fileID:filePath:line:column:_:)``
+- ``when(fileID:filePath:line:column:_:)-1fm7k``
+- ``when(fileID:filePath:line:column:_:)-3fqwn``
 - ``Stub``
 
 ### Verifying
 
 - <doc:Verifying>
 - ``verify(_:fileID:filePath:line:column:)``
-- ``verify(isolation:fileID:filePath:line:column:_:)``
+- ``verify(fileID:filePath:line:column:_:)-5w8px``
+- ``verify(fileID:filePath:line:column:_:)-6526d``
 - ``Verification``
 - ``verifyNever(_:fileID:filePath:line:column:)``
-- ``verifyNever(isolation:fileID:filePath:line:column:_:)``
-- ``verifyInOrder(isolation:fileID:filePath:line:column:_:)``
-- ``verifyInOrder(fileID:filePath:line:column:_:)``
+- ``verifyNever(fileID:filePath:line:column:_:)-1nkaa``
+- ``verifyNever(fileID:filePath:line:column:_:)-3xdko``
+- ``verifyInOrder(fileID:filePath:line:column:_:)-6njpq``
+- ``verifyInOrder(fileID:filePath:line:column:_:)-vpyp``
 - ``verifyNoMoreInteractions(_:fileID:filePath:line:column:)``
 - ``reset(_:)``
 

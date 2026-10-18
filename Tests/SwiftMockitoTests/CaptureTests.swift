@@ -11,14 +11,20 @@ import Testing
         return box.messages
     }
 
-    @Test func captureNeverDispatches() {
-        when { try await mock.fetch(id: "42") }.thenThrow(SampleError())
+    func failures(_ body: () async -> Void) async -> [String] {
+        let box = MessageBox()
+        await Reporter.$sink.withValue({ message, site in box.append("\(message) @\(site.fileID)") }, operation: body)
+        return box.messages
+    }
+
+    @Test func captureNeverDispatches() async {
+        await when { try await mock.fetch(id: "42") }.thenThrow(SampleError())
         when(mock.cached(id: "42")).thenReturn("x")
         #expect(mock.runtime.callsSnapshot().isEmpty)
     }
 
-    @Test func asyncThrowingMemberIsCapturedWithoutAwaitAtCallSite() async throws {
-        when { try await mock.fetch(id: "42") }.thenReturn("user")
+    @Test func asyncThrowingMemberIsCapturedWithAwait() async throws {
+        await when { try await mock.fetch(id: "42") }.thenReturn("user")
         #expect(try await mock.fetch(id: "42") == "user")
     }
 
@@ -39,9 +45,9 @@ import Testing
         } == ["when: expected exactly one mock call, recorded 2 (SampleMock.cached(id:), SampleMock.cached(id:)). @SwiftMockitoTests/CaptureTests.swift"])
     }
 
-    @Test func stubWhoseClosureTypeDiffersFromTheMemberIsRejected() {
-        #expect(failures {
-            when { try? await mock.fetch(id: "1") }.thenReturn(nil)
+    @Test func stubWhoseClosureTypeDiffersFromTheMemberIsRejected() async {
+        #expect(await failures {
+            await when { try? await mock.fetch(id: "1") }.thenReturn(nil)
         } == ["when: the closure evaluates to Optional<String> but SampleMock.fetch(id:) returns String; put only the member call in the closure (no try?, ??, or conversions). @SwiftMockitoTests/CaptureTests.swift"])
         #expect(mock.runtime.stubsSnapshot(member: "fetch(id:)").isEmpty)
     }
@@ -53,19 +59,19 @@ import Testing
         #expect(mock.runtime.stubsSnapshot(member: "cached(id:)").isEmpty)
     }
 
-    @Test func answersWhoseResultTypeDiffersFromTheMemberAreRejected() {
+    @Test func answersWhoseResultTypeDiffersFromTheMemberAreRejected() async {
         let expected = "when: the closure evaluates to Optional<String> but SampleMock.fetch(id:) returns String; put only the member call in the closure (no try?, ??, or conversions). @SwiftMockitoTests/CaptureTests.swift"
-        #expect(failures {
-            when { try? await mock.fetch(id: "1") }.thenAnswer { (id: String) -> String? in id }
+        #expect(await failures {
+            await when { try? await mock.fetch(id: "1") }.thenAnswer { (id: String) -> String? in id }
         } == [expected])
-        #expect(failures {
-            when { try? await mock.fetch(id: "1") }.thenAnswer { (id: String) async -> String? in id }
+        #expect(await failures {
+            await when { try? await mock.fetch(id: "1") }.thenAnswer { (id: String) async -> String? in id }
         } == [expected])
         #expect(mock.runtime.stubsSnapshot(member: "fetch(id:)").isEmpty)
     }
 
     @Test func matchingTypeStillInstallsAndAnswers() async throws {
-        when { try await mock.fetch(id: "1") }.thenAnswer { (id: String) -> String in "got \(id)" }
+        await when { try await mock.fetch(id: "1") }.thenAnswer { (id: String) -> String in "got \(id)" }
         #expect(try await mock.fetch(id: "1") == "got 1")
     }
 
@@ -93,43 +99,33 @@ import Testing
     }
 
     @Test func captureContextDoesNotLeakAcrossAwait() async throws {
-        when { try await mock.fetch(id: "1") }.thenReturn("one")
+        await when { try await mock.fetch(id: "1") }.thenReturn("one")
         await Task.yield()
         #expect(Capture.current == nil)
         #expect(try await mock.fetch(id: "1") == "one")
     }
 
-    @Test func suspendingCaptureExpressionIsMisuse() {
-        #expect(failures {
-            when {
+    /// The capture is task-local, so the expression may suspend before it reaches the mock.
+    @Test func suspendingBeforeTheMockCallIsFine() async throws {
+        #expect(await failures {
+            await when {
                 await Task.yield()
                 return try await mock.fetch(id: "1")
             }.thenReturn("x")
-        } == ["when: the expression suspended before reaching a mock call. Keep only the mock call inside the closure; a mock of a global-actor protocol must be used from a test isolated to that actor. @SwiftMockitoTests/CaptureTests.swift"])
+        }.isEmpty)
+        #expect(try await mock.fetch(id: "1") == "x")
     }
 
-    @Test func suspendedExpressionIsAlwaysReported() {
-        // The body parks on a continuation that is resumed only after `when` returned, so it
-        // always suspends (`Task.yield` may not) and always finishes after `captureAll` gave up.
-        let gate = Gate()
-        let box = MessageBox()
-        Reporter.$sink.withValue({ message, _ in box.append(message) }) {
-            for _ in 0..<300 {
-                when {
-                    await gate.wait()
-                    return try await mock.fetch(id: "1")
-                }.thenReturn("x")
-                gate.openAll()
-            }
-        }
-        #expect(box.messages.count == 300)
-        #expect(box.messages.allSatisfy { $0.contains("suspended before reaching a mock call") })
-        #expect(mock.runtime.stubsSnapshot(member: "fetch(id:)").isEmpty)
+    /// Stubbing and verifying from inside a custom actor instance works, in every form.
+    @Test func worksInsideACustomActor() async throws {
+        let owner = MockOwner(mock: mock)
+        #expect(await owner.stubAndCall() == ["cached", "fetched"])
+        verify(mock.cached(id: "1")).called(1)
     }
 
     // Resolved D1: `nonisolated(nonsending)` async members keep MainActor closures synchronous.
     @MainActor @Test func mainActorTestCapturesAsyncMember() async throws {
-        when { try await mock.fetch(id: "7") }.thenReturn("main")
+        await when { try await mock.fetch(id: "7") }.thenReturn("main")
         #expect(try await mock.fetch(id: "7") == "main")
     }
 
@@ -141,17 +137,16 @@ import Testing
     }
 }
 
-/// Parks `wait()` callers until `openAll()`.
-private final class Gate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+/// Uses the mock from a custom actor's isolation.
+private actor MockOwner {
+    let mock: SampleMock
+    init(mock: SampleMock) { self.mock = mock }
 
-    func wait() async {
-        await withCheckedContinuation { continuation in lock.withLock { waiters.append(continuation) } }
-    }
-
-    func openAll() {
-        let parked = lock.withLock { let all = waiters; waiters = []; return all }
-        for continuation in parked { continuation.resume() }
+    func stubAndCall() async -> [String] {
+        when(mock.cached(id: "1")).thenReturn("cached")
+        await when { try await mock.fetch(id: "1") }.thenReturn("fetched")
+        let fetched = (try? await mock.fetch(id: "1")) ?? "missing"
+        await verify { try await mock.fetch(id: "1") }.called(1)
+        return [mock.cached(id: "1") ?? "missing", fetched]
     }
 }

@@ -15,8 +15,8 @@ struct PostDetailViewModelTests {
     /// `verifyInOrder` checks the author is fetched before the comments, and
     /// `verifyNoMoreInteractions` checks nothing else was requested.
     @Test func loadsAuthorThenComments() async {
-        when { try await service.user(id: 7) }.thenReturn(.fixture)
-        when { try await service.comments(postID: 1) }.thenReturn([.fixture])
+        await when { try await service.user(id: 7) }.thenReturn(.fixture)
+        await when { try await service.comments(postID: 1) }.thenReturn([.fixture])
 
         await viewModel.load()
 
@@ -30,8 +30,8 @@ struct PostDetailViewModelTests {
 
     /// A post with no comments still loads; the screen shows the author and an empty list.
     @Test func loadsPostWithNoComments() async {
-        when { try await service.user(id: 7) }.thenReturn(.fixture)
-        when { try await service.comments(postID: 1) }.thenReturn([])
+        await when { try await service.user(id: 7) }.thenReturn(.fixture)
+        await when { try await service.comments(postID: 1) }.thenReturn([])
 
         await viewModel.load()
 
@@ -40,12 +40,12 @@ struct PostDetailViewModelTests {
 
     /// `verifyNever` checks a call did not happen: no comments request once the author fails.
     @Test func stopsWhenAuthorFails() async {
-        when { try await service.user(id: 7) }.thenThrow(Offline())
+        await when { try await service.user(id: 7) }.thenThrow(Offline())
 
         await viewModel.load()
 
         #expect(viewModel.state == .failed("You're offline"))
-        verifyNever { try await service.comments(postID: 1) }
+        await verifyNever { try await service.comments(postID: 1) }
     }
 
     /// `thenAnswer` runs your closure with the call's arguments, here to call the completion

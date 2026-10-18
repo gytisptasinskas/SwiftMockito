@@ -5,14 +5,14 @@ import Testing
     let feed = MockFeed()
 
     @Test func asyncGetterAndAsyncMethods() async {
-        when { await feed.latest }.thenReturn(3)
-        when { await feed.count() }.thenReturn(9)
+        await when { await feed.latest }.thenReturn(3)
+        await when { await feed.count() }.thenReturn(9)
         await feed.refresh(force: true)
 
         #expect(await feed.latest == 3)
         #expect(await feed.count() == 9)
-        verify { await feed.refresh(force: true) }.called(1)
-        verifyNever { await feed.refresh(force: false) }
+        await verify { await feed.refresh(force: true) }.called(1)
+        await verifyNever { await feed.refresh(force: false) }
     }
 
     @Test func throwingGetterThrowsStubbedError() {
@@ -27,7 +27,7 @@ import Testing
     }
 
     @MainActor @Test func asyncMembersFromMainActor() async {
-        when { await feed.count() }.thenReturn(1)
+        await when { await feed.count() }.thenReturn(1)
         #expect(await feed.count() == 1)
     }
 

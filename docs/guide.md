@@ -87,11 +87,12 @@ Exit codes: 0 on success, 1 for generation or write errors, 2 for a usage error 
 
 ## Stubbing
 
-Members that are synchronous and do not throw are stubbed with a plain expression. Members that need `try` or `await` use the closure form. Neither form needs an `await` in front of `when`:
+Members that are synchronous and do not throw are stubbed with a plain expression. Members that need `try` or `await` use the closure form. Write `await` in front of the closure form exactly when the call inside it needs `await`.
 
 ```swift
 when(client.cached(id: "42")).thenReturn(nil)
-when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+when { try client.save(.fixture) }.thenThrow(ClientError.offline)
+await when { try await client.fetch(id: "42") }.thenReturn(.fixture)
 ```
 
 **`thenReturn`** takes one value, or several that are returned in sequence. The last value repeats:
@@ -106,7 +107,7 @@ when(client.cached(id: "42")).thenReturn(nil, .fixture)
 **`thenThrow`** is for throwing members. Calling it on a `when(expr)` form of a non-throwing member is a compile error. In the closure form it is a runtime failure reported at the call site.
 
 ```swift
-when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+await when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
 ```
 
 **`thenAnswer`** receives the call's arguments and returns the result. Single-parameter answers infer their type. When a member takes a callback, annotate the closure's parameters:
@@ -142,12 +143,12 @@ When several stubs match a call, the newest one wins.
 
 ```swift
 verify(client.cached(id: "42")).called(1)
-verify { try await client.fetch(id: "42") }.called(atLeast: 1)
+await verify { try await client.fetch(id: "42") }.called(atLeast: 1)
 verifyNever { try client.save(.fixture) }
 verifyNoMoreInteractions(client)
 ```
 
-`verify`, `verifyNever` and `verifyInOrder` need no `await` in front, even when the expression inside them does.
+As with `when`, `verify`, `verifyNever` and `verifyInOrder` take `await` in front exactly when a call inside them needs `await`.
 
 A property setter is verified with an assignment inside the closure form:
 
@@ -284,12 +285,12 @@ final class UserRepositoryXCTests: XCTestCase {
     let client = MockClient()
 
     func testLoadsUser() async throws {
-        when { try await self.client.fetch(id: "42") }.thenReturn(.fixture)
+        await when { try await self.client.fetch(id: "42") }.thenReturn(.fixture)
 
         let user = try await UserRepository(client: client).user(id: "42")
 
         XCTAssertEqual(user, .fixture)
-        verify { try await self.client.fetch(id: "42") }.called(1)
+        await verify { try await self.client.fetch(id: "42") }.called(1)
     }
 }
 ```
@@ -313,7 +314,6 @@ Mocks of `@MainActor` protocols are used from a `@MainActor` test case.
 
 ## Known limitations
 
-- `when`, `verify`, `verifyNever` and the synchronous `verifyInOrder` cannot be called from inside a custom actor *instance*: they report that the expression suspended. Global actors such as `@MainActor` or a custom `@globalActor` work when the test is isolated to them.
 - Mocks of global-actor protocols are stubbed and verified from tests isolated to that actor.
 - `thenAnswer` bodies run, and `thenReturn` values are handed over, on whatever thread or actor the code under test calls the mock from. Don't touch actor-isolated test state from an answer.
 - A `when` closure must evaluate to the member's own return type. Wrapping the call in `try?`, `??` or a conversion is reported at the `when`, and no stub is installed.
