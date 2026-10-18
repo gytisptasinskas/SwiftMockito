@@ -81,4 +81,6 @@ struct MockModel {
     let imports: [String]
     let members: [Member]
     let marker: Marker
+    /// The protocol's associated types (and its parents'), which the mock declares as generic parameters.
+    var genericParameters: [GenericParameter] = []
 }

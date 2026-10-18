@@ -54,7 +54,8 @@ struct ProtocolResolver {
             module: root.input.module,
             imports: imports,
             members: disambiguateOverloads(collected.members),
-            marker: marker
+            marker: marker,
+            genericParameters: collected.associatedTypes
         ))
     }
 
@@ -69,6 +70,8 @@ struct ProtocolResolver {
         var files: [String] = []
         /// Global actors of the inherited protocols, not of the root.
         var globalActors: [String] = []
+        /// `associatedtype Item: Equatable`, inherited ones first.
+        var associatedTypes: [GenericParameter] = []
     }
 
     private func collect(_ root: IndexedDecl<ProtocolDeclSyntax>, marker: Marker) -> Result<Collected, GeneratorFailure> {
@@ -109,6 +112,17 @@ struct ProtocolResolver {
                 }
             }
             for item in decl.node.memberBlock.members {
+                if let associated = item.decl.as(AssociatedTypeDeclSyntax.self) {
+                    let typeName = associated.name.text
+                    if associated.genericWhereClause != nil {
+                        diagnostics.append(.error("\(name).\(typeName): associated types with where clauses are not supported", at: marker))
+                    } else if !collected.associatedTypes.contains(where: { $0.name == typeName }) {
+                        let constraint = associated.inheritanceClause?.inheritedTypes
+                            .map { $0.type.trimmedDescription }.joined(separator: " & ")
+                        collected.associatedTypes.append(GenericParameter(name: typeName, constraint: constraint))
+                    }
+                    continue
+                }
                 switch convert(item.decl, protocolName: name, marker: marker) {
                 case .success(let member): collected.members.append(member)
                 case .failure(let diagnostic): diagnostics.append(diagnostic)
@@ -129,7 +143,6 @@ struct ProtocolResolver {
             return unsupported("static requirements")
         }
         if decl.is(InitializerDeclSyntax.self) { return unsupported("initializers") }
-        if decl.is(AssociatedTypeDeclSyntax.self) { return unsupported("associated types") }
         if decl.tokens(viewMode: .sourceAccurate).contains(where: { $0.tokenKind == .keyword(.Self) }) {
             return unsupported("Self requirements")
         }

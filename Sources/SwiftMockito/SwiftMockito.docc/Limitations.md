@@ -11,7 +11,9 @@ the known limitations of the current version.
 
 - Argument matchers: no `any()`, wildcards, predicates or argument captors.
 - Default stubs or "nice mock" behavior. An unstubbed call that returns a value fails.
-- Static requirements, initializers, `Self` requirements and associated types.
+- Static requirements, initializers and `Self` requirements.
+- Associated types with a `where` clause. Other associated types make the mock generic:
+  `MockRepository<User, String>()`.
 - Subscripts with `async` or `throws` getters, and generic subscripts.
 - `rethrows` members.
 - Objective-C protocols (`@objc`, or `optional` requirements).
