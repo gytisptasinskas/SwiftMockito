@@ -72,7 +72,7 @@ struct UserRepositoryTests {
 
     @Test func doesNotSaveWhenFetchFails() async {
         when(client.cached(id: "42")).thenReturn(nil)
-        when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+        await when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
 
         await #expect(throws: ClientError.offline) {
             try await UserRepository(client: client).user(id: "42")
@@ -83,14 +83,15 @@ struct UserRepositoryTests {
 ```
 
 Use the plain form for synchronous calls, and the `{ … }` closure form when the call needs
-`try` or `await`.
+`try` or `await`. Put `await` in front of the closure form when the call inside needs `await`.
 
 ### Cheat sheet
 
 | You want to | Write |
 |---|---|
 | Stub a plain call | `when(client.cached(id: "42")).thenReturn(.fixture)` |
-| Stub an `async` or `throws` call | `when { try await client.fetch(id: "42") }.thenReturn(.fixture)` |
+| Stub a `throws` call | `when { try client.save(.fixture) }.thenThrow(ClientError.offline)` |
+| Stub an `async` call | `await when { try await client.fetch(id: "42") }.thenReturn(.fixture)` |
 | Return values in sequence | `.thenReturn(nil, .fixture)` (the last one repeats) |
 | Throw | `.thenThrow(ClientError.offline)` |
 | Compute the result or call a callback | `.thenAnswer { id in … }` |

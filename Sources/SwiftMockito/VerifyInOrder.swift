@@ -31,24 +31,22 @@ public enum VerifyInOrderBuilder {
 /// type. If that type has no dummy, the calls after it cannot be recorded and the failure says
 /// so; register one with ``provideDummy(_:)``.
 ///
-/// This form runs the block synchronously. In an `async` test, use
-/// ``verifyInOrder(fileID:filePath:line:column:_:)`` with `await`.
+/// This form is for blocks whose lines need no `await`. When a line needs `await`, use
+/// ``verifyInOrder(fileID:filePath:line:column:_:)-vpyp`` with `await`.
 ///
 /// - Parameters:
-///   - isolation: The caller's actor. Leave the default.
 ///   - fileID: The file of the call site, reported on failure. Leave the default.
 ///   - filePath: The path of the call site, reported on failure. Leave the default.
 ///   - line: The line of the call site, reported on failure. Leave the default.
 ///   - column: The column of the call site, reported on failure. Leave the default.
 ///   - calls: The mock calls, one per line, in the order they must have happened.
 public func verifyInOrder(
-    isolation: isolated (any Actor)? = #isolation,
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
-    @VerifyInOrderBuilder _ calls: @escaping () async throws -> Void
+    @VerifyInOrderBuilder _ calls: () throws -> Void
 ) {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    applyInOrder(captureAll("verifyInOrder", site: site, isolation: isolation, continuing: true, calls), site: site)
+    applyInOrder(captureAll("verifyInOrder", site: site, continuing: true, calls), site: site)
 }
 
 /// Checks that the calls in `calls` happened in this relative order, from an `async` context.
@@ -61,7 +59,7 @@ public func verifyInOrder(
 /// }
 /// ```
 ///
-/// It checks the same thing as ``verifyInOrder(isolation:fileID:filePath:line:column:_:)``:
+/// It checks the same thing as ``verifyInOrder(fileID:filePath:line:column:_:)-6njpq``:
 /// relative order, with unrelated calls allowed in between. Matched calls are marked as verified.
 ///
 /// - Parameters:
@@ -70,27 +68,14 @@ public func verifyInOrder(
 ///   - line: The line of the call site, reported on failure. Leave the default.
 ///   - column: The column of the call site, reported on failure. Leave the default.
 ///   - calls: The mock calls, one per line, in the order they must have happened.
+@_disfavoredOverload
 nonisolated(nonsending) public func verifyInOrder(
     fileID: String = #fileID, filePath: StaticString = #filePath,
     line: UInt = #line, column: UInt = #column,
     @VerifyInOrderBuilder _ calls: () async throws -> Void
 ) async {
     let site = CallSite(fileID: fileID, filePath: filePath, line: line, column: column)
-    let capture = Capture()
-    var signalled = false
-    do {
-        try await Capture.$current.withValue(capture) {
-            try await Capture.$currentSite.withValue(site) {
-                try await Capture.$continuesAfterRecord.withValue(true) { try await calls() }
-            }
-        }
-    } catch is CaptureSignal {
-        signalled = true
-    } catch {
-        Reporter.fail("verifyInOrder: the block threw \(error) instead of reaching a mock call.", at: site)
-        return
-    }
-    applyInOrder(CaptureOutcome(recorded: capture.snapshot, signalled: signalled), site: site)
+    applyInOrder(await captureAll("verifyInOrder", site: site, continuing: true, calls), site: site)
 }
 
 private func applyInOrder(_ outcome: CaptureOutcome?, site: CallSite) {

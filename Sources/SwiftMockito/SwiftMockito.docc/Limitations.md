@@ -26,9 +26,6 @@ the known limitations of the current version.
 
 ### Known limitations
 
-- `when`, `verify`, `verifyNever` and the synchronous `verifyInOrder` cannot be called from
-  inside a custom actor *instance*: they report that the expression suspended. Global actors
-  such as `@MainActor` or a custom `@globalActor` work when the test is isolated to them.
 - Mocks of global-actor protocols are stubbed and verified from tests isolated to that actor.
 - `thenAnswer` bodies run, and `thenReturn` values are handed over, on whatever thread or actor
   the code under test calls the mock from. Don't touch actor-isolated test state from an answer.

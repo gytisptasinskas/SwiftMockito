@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PluginFixture",
-    platforms: [.macOS(.v26), .iOS(.v26)],   // match the root package (D1)
+    platforms: [.macOS(.v14), .iOS(.v17)],   // match the root package
     dependencies: [.package(name: "SwiftMockito", path: "../..")],
     targets: [
         .target(name: "App"),

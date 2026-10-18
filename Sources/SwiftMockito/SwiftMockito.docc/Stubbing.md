@@ -6,12 +6,11 @@ Configure what a mock returns, throws or computes for a call.
 
 Members that are synchronous and do not throw are stubbed with a plain expression, using
 ``when(_:fileID:filePath:line:column:)``. Members that need `try` or `await` use the closure
-form, ``when(isolation:fileID:filePath:line:column:_:)``. Neither form needs an `await` in front
-of `when`:
+form. Write `await` in front of the closure form exactly when the call inside it needs `await`.:
 
 ```swift
 when(client.cached(id: "42")).thenReturn(nil)
-when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+await when { try await client.fetch(id: "42") }.thenReturn(.fixture)
 ```
 
 Both return a ``Stub``. Each `when` expression must record exactly one mock call; zero or
@@ -38,7 +37,7 @@ non-throwing member is a compile error. In the closure form it is a runtime fail
 the call site.
 
 ```swift
-when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
+await when { try await client.fetch(id: "42") }.thenThrow(ClientError.offline)
 ```
 
 ### Compute the result

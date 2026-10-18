@@ -19,7 +19,7 @@ final class ClientXCTests: XCTestCase {
 
     func testDoesNotSaveWhenFetchFails() async {
         when(client.cached(id: "42")).thenReturn(nil)
-        when { try await self.client.fetch(id: "42") }.thenThrow(ClientError.offline)
+        await when { try await self.client.fetch(id: "42") }.thenThrow(ClientError.offline)
 
         do {
             _ = try await sut.user(id: "42")
@@ -43,7 +43,7 @@ final class ClientXCTests: XCTestCase {
 
     func testFetchesAndSavesInOrder() async throws {
         when(client.cached(id: "42")).thenReturn(nil)
-        when { try await self.client.fetch(id: "42") }.thenReturn(.fixture)
+        await when { try await self.client.fetch(id: "42") }.thenReturn(.fixture)
 
         _ = try await sut.user(id: "42")
 

@@ -13,6 +13,17 @@ All notable changes to SwiftMockito. The format follows [Keep a Changelog](https
 
 ### Changed
 
+- **Breaking: minimum is now iOS 17 / macOS 14** (was iOS 26 / macOS 26). The closure forms of `when`, `verify`, `verifyNever` and `verifyInOrder` no longer run their closure synchronously through `Task.immediate`; when the call inside needs `await`, the form is `async` too. **Migration:** put `await` in front wherever the closure contains `await`:
+
+  ```swift
+  // 0.1.0
+  when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+  // now
+  await when { try await client.fetch(id: "42") }.thenReturn(.fixture)
+  ```
+
+  Closures without `await` (`when { try client.save(x) }`, `verify { client.token = "new" }`) and the plain forms (`when(client.cached(id: "42"))`) are unchanged. The compiler points at every line that needs `await`. The `isolation:` parameter of the closure forms is gone.
+- `when`, `verify`, `verifyNever` and `verifyInOrder` now work from inside a custom actor instance, and an expression may suspend before reaching the mock; both used to be reported as misuse.
 - A forgotten stub on a non-throwing member that returns a value now fails only that test and returns a dummy, instead of ending the whole test process. It still traps when no dummy exists for the return type. ([#6](https://github.com/gytisptasinskas/SwiftMockito/pull/6))
 - Mocks from 0.1.0 still compile: the new `MockRuntime` parameters (`dummy:`, `callbacks:`) have defaults. Regenerate them to get the new behaviour.
 
