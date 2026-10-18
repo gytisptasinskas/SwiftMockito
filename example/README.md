@@ -19,7 +19,7 @@ appTests/
 
 ## Running it
 
-1. Open `example/app.xcodeproj` in Xcode 27 or later (the project was created with Xcode 27).
+1. Open `example/app.xcodeproj` in Xcode 26 or later.
 2. Press ⌘U to run the tests, or ⌘R to run the app in an iOS 26 simulator.
 3. The first build asks you to trust the SwiftMockito macro and the SwiftMockitoPlugin build plugin. Choose **Trust & Enable** for both.
 
